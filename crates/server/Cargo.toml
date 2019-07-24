@@ -1,5 +1,5 @@
 [package]
-name = "regius-mark-server"
+name = "regiusmark-server"
 version = "0.0.1"
 authors = ["Samuel Grenier <samrg472@gmail.com>"]
 edition = "2018"
@@ -9,10 +9,10 @@ bytes = "0.4.12"
 dirs = "2.0.1"
 env_logger = "0.6.2"
 futures = "0.1.28"
-regius-mark = { path = "../regius-mark" }
 http = "0.1.17"
 log = "0.4.7"
 parking_lot = "0.9.0"
+regiusmark = { path = "../regiusmark" }
 tokio-signal = "0.2.7"
 toml = "0.5.1"
 
@@ -41,12 +41,12 @@ default-features = false
 sodiumoxide = { version = "0.2.2", default-features = false, features = ["std"] }
 
 [lib]
-name = "godcoin_server"
+name = "regiusmark_server"
 path = "src/server/lib.rs"
 doctest = false
 
 [[bin]]
-name = "godcoin-server"
+name = "regiusmark-server"
 path = "src/bin/server/main.rs"
 test = false
 doc = false

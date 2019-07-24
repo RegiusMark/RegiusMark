@@ -1,14 +1,14 @@
-use regius_mark::{constants::MAX_TX_SIGNATURES, prelude::*};
+use regiusmark::{constants::MAX_TX_SIGNATURES, prelude::*};
 
 pub mod minter;
 pub use minter::*;
 
-pub fn get_asset(grael: &str) -> Asset {
-    grael.parse().unwrap()
+pub fn get_asset(s: &str) -> Asset {
+    s.parse().unwrap()
 }
 
 pub fn create_tx_header(fee: &str) -> Tx {
-    let timestamp = regius_mark::get_epoch_ms();
+    let timestamp = regiusmark::get_epoch_ms();
     Tx {
         timestamp,
         fee: fee.parse().unwrap(),

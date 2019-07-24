@@ -1,4 +1,4 @@
-use regius_mark::prelude::{KeyPair, Wif};
+use regiusmark::prelude::{KeyPair, Wif};
 
 pub fn generate_keypair() {
     let pair = KeyPair::gen();

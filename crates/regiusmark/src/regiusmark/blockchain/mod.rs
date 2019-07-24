@@ -195,7 +195,7 @@ impl Blockchain {
             }
         }
 
-        GRAEL_FEE_MIN.mul(GRAEL_FEE_MULT.pow(tx_count as u16)?)
+        MARK_FEE_MIN.mul(MARK_FEE_MULT.pow(tx_count as u16)?)
     }
 
     pub fn get_network_fee(&self) -> Option<Asset> {
@@ -219,7 +219,7 @@ impl Blockchain {
             return None;
         }
 
-        GRAEL_FEE_MIN.mul(GRAEL_FEE_NET_MULT.pow(tx_count as u16)?)
+        MARK_FEE_MIN.mul(MARK_FEE_NET_MULT.pow(tx_count as u16)?)
     }
 
     pub fn get_balance(&self, addr: &ScriptHash, additional_txs: &[TxVariant]) -> Option<Asset> {

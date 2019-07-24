@@ -28,7 +28,7 @@ macro_rules! send_rpc_req {
     ($wallet:expr, $req:expr) => {{
         let body = {
             let mut buf = Vec::with_capacity(4096);
-            regius_mark::net::RequestType::Single($req).serialize(&mut buf);
+            regiusmark::net::RequestType::Single($req).serialize(&mut buf);
             buf
         };
         let res = Client::new().post($wallet.url.clone()).body(body).send();
@@ -39,7 +39,7 @@ macro_rules! send_rpc_req {
                 res.read_to_end(&mut content)
                     .map_err(|e| format!("{}", e))?;
                 let mut cursor = Cursor::<&[u8]>::new(&content);
-                regius_mark::net::ResponseType::deserialize(&mut cursor)
+                regiusmark::net::ResponseType::deserialize(&mut cursor)
                     .map(|res| res.unwrap_single())
                     .map_err(|e| format!("Failed to deserialize response: {}", e))
             }

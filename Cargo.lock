@@ -1348,7 +1348,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "regius-mark"
+name = "regiusmark"
 version = "0.0.1"
 dependencies = [
  "bs58 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1364,7 +1364,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "regius-mark-cli"
+name = "regiusmark-cli"
 version = "0.0.1"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1372,7 +1372,7 @@ dependencies = [
  "env_logger 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "faster-hex 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "regius-mark 0.0.1",
+ "regiusmark 0.0.1",
  "reqwest 0.9.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocksdb 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustyline 5.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1380,7 +1380,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "regius-mark-server"
+name = "regiusmark-server"
 version = "0.0.1"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1392,7 +1392,7 @@ dependencies = [
  "hyper 0.12.33 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "regius-mark 0.0.1",
+ "regiusmark 0.0.1",
  "serde 1.0.97 (registry+https://github.com/rust-lang/crates.io-index)",
  "sodiumoxide 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -1,6 +1,6 @@
 use clap::{App, Arg};
 use env_logger::{Env, DEFAULT_FILTER_ENV};
-use regius_mark::{blockchain::ReindexOpts, prelude::*};
+use regiusmark::{blockchain::ReindexOpts, prelude::*};
 use log::info;
 use serde::Deserialize;
 use std::{
@@ -16,26 +16,26 @@ struct Config {
 }
 
 fn main() {
-    env_logger::init_from_env(Env::new().filter_or(DEFAULT_FILTER_ENV, "godcoin=info"));
-    regius_mark::init().unwrap();
+    env_logger::init_from_env(Env::new().filter_or(DEFAULT_FILTER_ENV, "regiusmark=info"));
+    regiusmark::init().unwrap();
 
     let home = {
-        match env::var("GODCOIN_HOME") {
+        match env::var("REGIUSMARK_HOME") {
             Ok(s) => PathBuf::from(s),
-            Err(_) => Path::join(&dirs::data_local_dir().unwrap(), "godcoin"),
+            Err(_) => Path::join(&dirs::data_local_dir().unwrap(), "regiusmark"),
         }
     };
 
     let home = home.to_string_lossy();
-    let args = App::new("godcoin-server")
-        .about("GODcoin core server daemon")
+    let args = App::new("regiusmark-server")
+        .about("RegiusMark core server daemon")
         .version(env!("CARGO_PKG_VERSION"))
         .arg(
             Arg::with_name("home")
                 .long("home")
                 .default_value(&home)
                 .empty_values(false)
-                .help("Home directory which defaults to env var GODCOIN_HOME"),
+                .help("Home directory which defaults to env var REGIUSMARK_HOME"),
         )
         .arg(
             Arg::with_name("reindex")
@@ -54,9 +54,9 @@ fn main() {
         if !Path::is_dir(&home) {
             let res = std::fs::create_dir(&home);
             res.unwrap_or_else(|_| panic!("Failed to create dir at {:?}", &home));
-            info!("Created GODcoin home at {:?}", &home);
+            info!("Created RegiusMark home at {:?}", &home);
         } else {
-            info!("Found GODcoin home at {:?}", &home);
+            info!("Found RegiusMark home at {:?}", &home);
         }
         let blocklog_loc = Path::join(&home, "blklog");
         let index_loc = Path::join(&home, "index");
@@ -91,7 +91,7 @@ fn main() {
 
     let mut rt = Runtime::new().unwrap();
     rt.spawn(future::lazy(|| {
-        godcoin_server::start(godcoin_server::ServerOpts {
+        regiusmark_server::start(regiusmark_server::ServerOpts {
             blocklog_loc,
             index_loc,
             minter_key,

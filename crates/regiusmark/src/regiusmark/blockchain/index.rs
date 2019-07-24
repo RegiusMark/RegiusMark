@@ -354,7 +354,7 @@ mod tests {
     {
         let mut tmp_dir = env::temp_dir();
         {
-            let mut s = String::from("godcoin_test_");
+            let mut s = String::from("regiusmark_test_");
             let mut num: [u8; 8] = [0; 8];
             randombytes::randombytes_into(&mut num);
             s.push_str(&format!("{}", u64::from_be_bytes(num)));

@@ -1,4 +1,4 @@
-use regius_mark::prelude::*;
+use regiusmark::prelude::*;
 use log::{info, warn};
 use parking_lot::Mutex;
 use std::{

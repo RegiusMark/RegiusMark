@@ -1,5 +1,5 @@
 [package]
-name = "regius-mark-cli"
+name = "regiusmark-cli"
 version = "0.0.1"
 authors = ["Samuel Grenier <samrg472@gmail.com>"]
 edition = "2018"
@@ -9,7 +9,7 @@ dirs = "2.0.1"
 env_logger = "0.6.2"
 faster-hex = "0.3.1"
 log = "0.4.7"
-regius-mark = { path = "../regius-mark" }
+regiusmark = { path = "../regiusmark" }
 reqwest = "0.9.19"
 rustyline = "5.0.0"
 rocksdb = "0.12.3"

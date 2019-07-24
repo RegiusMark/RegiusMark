@@ -1,9 +1,9 @@
 use super::create_tx_header;
-use regius_mark::{
+use regiusmark::{
     blockchain::{GenesisBlockInfo, ReindexOpts},
     prelude::*,
 };
-use godcoin_server::{index, prelude::*, ServerData};
+use regiusmark_server::{index, prelude::*, ServerData};
 use sodiumoxide::randombytes;
 use std::{
     env, fs,
@@ -19,12 +19,12 @@ pub struct TestMinter(ServerData, GenesisBlockInfo, PathBuf, Indexed);
 
 impl TestMinter {
     pub fn new() -> Self {
-        regius_mark::init().unwrap();
+        regiusmark::init().unwrap();
         let tmp_dir = {
             let mut tmp_dir = env::temp_dir();
             let mut num: [u8; 8] = [0; 8];
             randombytes::randombytes_into(&mut num);
-            tmp_dir.push(&format!("godcoin_test_{}", u64::from_be_bytes(num)));
+            tmp_dir.push(&format!("regiusmark_test_{}", u64::from_be_bytes(num)));
             tmp_dir
         };
         fs::create_dir(&tmp_dir).expect(&format!("Could not create temp dir {:?}", &tmp_dir));
@@ -40,9 +40,9 @@ impl TestMinter {
                 let mut txs = Vec::with_capacity(1);
 
                 let mut tx = TxVariant::V0(TxVariantV0::MintTx(MintTx {
-                    base: create_tx_header("0.00000 GRAEL"),
+                    base: create_tx_header("0.00000 MARK"),
                     to: (&info.script).into(),
-                    amount: "1000.00000 GRAEL".parse().unwrap(),
+                    amount: "1000.00000 MARK".parse().unwrap(),
                     attachment: vec![1, 2, 3],
                     attachment_name: "".to_owned(),
                     script: info.script.clone(),
@@ -54,7 +54,7 @@ impl TestMinter {
 
                 txs.push(TxVariant::V0(TxVariantV0::RewardTx(RewardTx {
                     base: Tx {
-                        fee: "0.00000 GRAEL".parse().unwrap(),
+                        fee: "0.00000 MARK".parse().unwrap(),
                         timestamp: 0,
                         signature_pairs: Vec::new(),
                     },
@@ -138,7 +138,7 @@ impl TestMinter {
         );
 
         let data = Arc::new(self.0.clone());
-        let filter = godcoin_server::app_filter!(data);
+        let filter = regiusmark_server::app_filter!(data);
         let res = warp::test::request()
             .method("POST")
             .header("content-length", body.len())

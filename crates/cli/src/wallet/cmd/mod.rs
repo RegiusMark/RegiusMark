@@ -1,5 +1,5 @@
 use super::{db::Password, *};
-use regius_mark::{constants::*, prelude::*};
+use regiusmark::{constants::*, prelude::*};
 use reqwest::Client;
 use std::{
     fs::File,
@@ -182,10 +182,10 @@ pub fn build_mint_tx(wallet: &mut Wallet, args: &mut Vec<String>) -> Result<bool
         let ts: u64 = args[1]
             .parse()
             .map_err(|_| "Failed to parse timestamp offset".to_owned())?;
-        ts + regius_mark::get_epoch_ms()
+        ts + regiusmark::get_epoch_ms()
     };
 
-    let amount = args[2].parse().map_err(|_| "Failed to parse grael asset")?;
+    let amount = args[2].parse().map_err(|_| "Failed to parse asset")?;
     let script: Script = hex_to_bytes!(args[3])?.into();
 
     let res = send_rpc_req!(wallet, MsgRequest::GetProperties)?;

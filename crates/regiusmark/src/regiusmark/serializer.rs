@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn asset_serialization() {
-        let a = "12.34567 GRAEL".parse().unwrap();
+        let a = "12.34567 MARK".parse().unwrap();
         let mut v = vec![];
         v.push_asset(a);
 

@@ -1,6 +1,6 @@
 use bytes::Buf;
 use futures::future::{ok, FutureResult};
-use regius_mark::{blockchain::ReindexOpts, net::*, prelude::*};
+use regiusmark::{blockchain::ReindexOpts, net::*, prelude::*};
 use log::{error, info, warn};
 use std::{io::Cursor, net::SocketAddr, path::PathBuf, sync::Arc};
 use warp::{Filter, Rejection, Reply};
@@ -22,7 +22,7 @@ macro_rules! app_filter {
             .and(warp::body::concat())
             .and(data)
             .and_then(index);
-        index.with(warp::log("godcoin"))
+        index.with(warp::log("regiusmark"))
     }};
 }
 

@@ -1,12 +1,12 @@
 [package]
-name = "regius-mark"
+name = "regiusmark"
 version = "0.0.1"
 authors = ["Samuel Grenier <samrg472@gmail.com>"]
 edition = "2018"
 
 [lib]
-name = "regius_mark"
-path = "src/regius-mark/lib.rs"
+name = "regiusmark"
+path = "src/regiusmark/lib.rs"
 
 [dependencies]
 bs58 = "0.2.2"

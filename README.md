@@ -1,15 +1,15 @@
-# GODcoin
-[![Build Status](https://travis-ci.com/GODcoin/godcoin-rs.svg?branch=master)](https://travis-ci.com/GODcoin/godcoin-rs)
+# Regius Mark
+[![Build Status](https://travis-ci.com/RegiusMark/RegiusMark.svg?branch=master)](https://travis-ci.com/RegiusMark/RegiusMark)
 
-https://godcoin.gold
+https://regiusmark.io
 
-## What is GODcoin?
+## What is Regius Mark?
 
-GODcoin is the official currency of Christ. GODcoin is backed by physical gold
-assets. The digital token name is represented as GRAEL. A single token will be
-represented by a gram of gold.
+Regius Mark is a cryptocurrency that is backed by physical gold assets. The
+digital token name is represented as MARK. A single token will be represented by
+a gram of gold.
 
-For more information see the [whitepaper](https://godcoin.gold/whitepaper).
+For more information see the [whitepaper](https://regiusmark.io/whitepaper).
 
 ## Development
 
@@ -31,7 +31,7 @@ or downloading it.
 
 #### Runtime environment
 
-- `GODCOIN_HOME` - specifies the directory where data and configurations are
+- `REGIUSMARK_HOME` - specifies the directory where data and configurations are
   stored.
 
 #### Running
@@ -41,14 +41,14 @@ Run the test suite:
 $ cargo test
 ```
 
-Launch GODcoin CLI:
+Launch CLI:
 ```
-$ cargo run --bin godcoin-cli
+$ cargo run --bin regiusmark-cli
 ```
 
-Launch GODcoin server:
+Launch server:
 ```
-$ cargo run --bin godcoin-server
+$ cargo run --bin regiusmark-server
 ```
 
 The server requires a configuration file in the home folder called

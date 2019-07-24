@@ -1,4 +1,4 @@
-use regius_mark::{
+use regiusmark::{
     constants,
     prelude::{net::ErrorKind, *},
 };
@@ -12,9 +12,9 @@ fn successful_broadcast() {
     let minter = TestMinter::new();
 
     let mut tx = TxVariant::V0(TxVariantV0::MintTx(MintTx {
-        base: create_tx_header("0.00000 GRAEL"),
+        base: create_tx_header("0.00000 MARK"),
         to: (&minter.genesis_info().script).into(),
-        amount: get_asset("10.00000 GRAEL"),
+        amount: get_asset("10.00000 MARK"),
         attachment: vec![],
         attachment_name: "".to_owned(),
         script: minter.genesis_info().script.clone(),
@@ -59,11 +59,11 @@ fn get_address_info() {
     assert!(!res.is_err());
 
     let expected = MsgResponse::GetAddressInfo(AddressInfo {
-        net_fee: constants::GRAEL_FEE_MIN,
-        addr_fee: constants::GRAEL_FEE_MIN
-            .mul(constants::GRAEL_FEE_MULT)
+        net_fee: constants::MARK_FEE_MIN,
+        addr_fee: constants::MARK_FEE_MIN
+            .mul(constants::MARK_FEE_MULT)
             .unwrap(),
-        balance: get_asset("1000.00000 GRAEL"),
+        balance: get_asset("1000.00000 MARK"),
     });
     assert_eq!(res, expected);
 }
