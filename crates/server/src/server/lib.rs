@@ -1,6 +1,6 @@
 use bytes::Buf;
 use futures::future::{ok, FutureResult};
-use godcoin::{blockchain::ReindexOpts, net::*, prelude::*};
+use regius_mark::{blockchain::ReindexOpts, net::*, prelude::*};
 use log::{error, info, warn};
 use std::{io::Cursor, net::SocketAddr, path::PathBuf, sync::Arc};
 use warp::{Filter, Rejection, Reply};

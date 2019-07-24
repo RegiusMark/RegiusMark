@@ -1,4 +1,4 @@
-use godcoin::{constants::*, prelude::*};
+use regius_mark::{constants::*, prelude::*};
 use std::sync::Arc;
 
 mod common;
@@ -211,7 +211,7 @@ fn memo_too_large() {
             from: from_addr.clone(),
             to: (&to_addr.0).into(),
             amount: get_asset("1.00000 GRAEL"),
-            memo: (0..=godcoin::constants::MAX_MEMO_BYTE_SIZE)
+            memo: (0..=regius_mark::constants::MAX_MEMO_BYTE_SIZE)
                 .map(|_| 0)
                 .collect(),
             script: minter.genesis_info().script.clone(),
@@ -240,7 +240,7 @@ fn script_too_large() {
     let minter = TestMinter::new();
 
     let from_script = Script::new(
-        (0..=godcoin::constants::MAX_SCRIPT_BYTE_SIZE)
+        (0..=regius_mark::constants::MAX_SCRIPT_BYTE_SIZE)
             .map(|_| 0)
             .collect(),
     );

@@ -1,6 +1,6 @@
 use clap::{App, Arg};
 use env_logger::{Env, DEFAULT_FILTER_ENV};
-use godcoin::{blockchain::ReindexOpts, prelude::*};
+use regius_mark::{blockchain::ReindexOpts, prelude::*};
 use log::info;
 use serde::Deserialize;
 use std::{
@@ -17,7 +17,7 @@ struct Config {
 
 fn main() {
     env_logger::init_from_env(Env::new().filter_or(DEFAULT_FILTER_ENV, "godcoin=info"));
-    godcoin::init().unwrap();
+    regius_mark::init().unwrap();
 
     let home = {
         match env::var("GODCOIN_HOME") {

@@ -1,4 +1,4 @@
-use godcoin::crypto::{double_sha256, KeyPair, PrivateKey, Wif};
+use regius_mark::crypto::{double_sha256, KeyPair, PrivateKey, Wif};
 use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
 use sodiumoxide::crypto::secretbox::{gen_key, Key};
 use std::path::PathBuf;

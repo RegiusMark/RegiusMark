@@ -1,4 +1,4 @@
-use godcoin::{
+use regius_mark::{
     constants,
     prelude::{net::ErrorKind, *},
 };

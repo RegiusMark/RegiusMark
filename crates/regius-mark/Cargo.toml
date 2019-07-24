@@ -1,12 +1,12 @@
 [package]
-name = "godcoin"
+name = "regius-mark"
 version = "0.0.1"
 authors = ["Samuel Grenier <samrg472@gmail.com>"]
 edition = "2018"
 
 [lib]
-name = "godcoin"
-path = "src/godcoin/lib.rs"
+name = "regius_mark"
+path = "src/regius-mark/lib.rs"
 
 [dependencies]
 bs58 = "0.2.2"

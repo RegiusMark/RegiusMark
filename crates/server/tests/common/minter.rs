@@ -1,5 +1,5 @@
 use super::create_tx_header;
-use godcoin::{
+use regius_mark::{
     blockchain::{GenesisBlockInfo, ReindexOpts},
     prelude::*,
 };
@@ -19,7 +19,7 @@ pub struct TestMinter(ServerData, GenesisBlockInfo, PathBuf, Indexed);
 
 impl TestMinter {
     pub fn new() -> Self {
-        godcoin::init().unwrap();
+        regius_mark::init().unwrap();
         let tmp_dir = {
             let mut tmp_dir = env::temp_dir();
             let mut num: [u8; 8] = [0; 8];

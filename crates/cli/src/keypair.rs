@@ -1,4 +1,4 @@
-use godcoin::prelude::{KeyPair, Wif};
+use regius_mark::prelude::{KeyPair, Wif};
 
 pub fn generate_keypair() {
     let pair = KeyPair::gen();

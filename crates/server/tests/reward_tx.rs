@@ -1,4 +1,4 @@
-use godcoin::prelude::*;
+use regius_mark::prelude::*;
 
 mod common;
 pub use common::*;

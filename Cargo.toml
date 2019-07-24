@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/godcoin",
+    "crates/regius-mark",
     "crates/server",
     "crates/cli",
 ]

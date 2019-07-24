@@ -1,4 +1,4 @@
-use godcoin::{
+use regius_mark::{
     blockchain::index::TxManager,
     constants,
     prelude::{net::ErrorKind, verify::TxErr, *},
@@ -147,10 +147,10 @@ fn tx_dupe() {
 
 #[test]
 fn tx_expired() {
-    use godcoin::constants::TX_EXPIRY_TIME;
+    use regius_mark::constants::TX_EXPIRY_TIME;
 
     let minter = TestMinter::new();
-    let time = godcoin::get_epoch_ms();
+    let time = regius_mark::get_epoch_ms();
 
     let tx = TxVariant::V0(TxVariantV0::MintTx(MintTx {
         base: create_tx_header_with_ts("0.00000 GRAEL", time + TX_EXPIRY_TIME),
@@ -172,7 +172,7 @@ fn tx_expired() {
 #[test]
 fn tx_far_in_the_future() {
     let minter = TestMinter::new();
-    let time = godcoin::get_epoch_ms();
+    let time = regius_mark::get_epoch_ms();
 
     let tx = TxVariant::V0(TxVariantV0::MintTx(MintTx {
         base: create_tx_header_with_ts("0.00000 GRAEL", time + 4000),

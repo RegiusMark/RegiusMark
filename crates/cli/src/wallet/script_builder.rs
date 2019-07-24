@@ -1,4 +1,4 @@
-use godcoin::{prelude::*, script::*};
+use regius_mark::{prelude::*, script::*};
 use std::{error::Error, num::ParseIntError};
 
 #[derive(Clone, Debug)]

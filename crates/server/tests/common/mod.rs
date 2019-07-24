@@ -1,4 +1,4 @@
-use godcoin::{constants::MAX_TX_SIGNATURES, prelude::*};
+use regius_mark::{constants::MAX_TX_SIGNATURES, prelude::*};
 
 pub mod minter;
 pub use minter::*;
@@ -8,7 +8,7 @@ pub fn get_asset(grael: &str) -> Asset {
 }
 
 pub fn create_tx_header(fee: &str) -> Tx {
-    let timestamp = godcoin::get_epoch_ms();
+    let timestamp = regius_mark::get_epoch_ms();
     Tx {
         timestamp,
         fee: fee.parse().unwrap(),

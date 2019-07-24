@@ -1,4 +1,4 @@
-use godcoin::{crypto::Signature, prelude::*};
+use regius_mark::{crypto::Signature, prelude::*};
 
 mod common;
 pub use common::*;
