@@ -24,13 +24,13 @@ pub fn get_epoch_ms() -> u64 {
 pub mod prelude {
     pub use super::asset::{self, Asset, AssetError, AssetErrorKind};
     pub use super::blockchain::{
-        index::IndexStatus, verify, AddressInfo, Block, BlockV0, Blockchain, Properties,
-        SignedBlock,
+        index::IndexStatus, verify, AddressInfo, Block, BlockFilter, BlockHeader, BlockHeaderV0,
+        BlockV0, Blockchain, FilteredBlock, Properties,
     };
     pub use super::crypto::{
         KeyPair, PrivateKey, PublicKey, ScriptHash, SigPair, Wif, WifError, WifErrorKind,
     };
-    pub use super::net::{self, MsgRequest, MsgResponse};
+    pub use super::net::{self, RequestBody, ResponseBody};
     pub use super::script::{self, OpFrame, Script, ScriptEngine};
     pub use super::tx::{
         MintTx, OwnerTx, RewardTx, TransferTx, Tx, TxId, TxPool, TxPrecompData, TxVariant,

@@ -1,6 +1,6 @@
-use reqwest::Url;
 use rustyline::{error::ReadlineError, Editor};
 use std::path::PathBuf;
+use url::Url;
 
 mod cmd;
 mod db;
@@ -13,6 +13,8 @@ pub struct Wallet {
     prompt: String,
     url: Url,
     db: Db,
+    // Current ID to be sent when making requests
+    req_id: u32,
 }
 
 impl Wallet {
@@ -24,10 +26,20 @@ impl Wallet {
             "new>> "
         })
         .to_owned();
+
+        let mut url: Url = "ws://localhost:7777".parse().unwrap();
+        if url.host_str().is_none() {
+            panic!("Expected url to have host");
+        }
+        if url.port().is_none() {
+            url.set_port(Some(7777)).unwrap();
+        }
+
         Wallet {
             db,
             prompt,
-            url: "http://localhost:7777".parse().unwrap(),
+            url,
+            req_id: 0,
         }
     }
 
@@ -41,23 +53,19 @@ impl Wallet {
                         continue;
                     }
                     let mut args = parser::parse_line(&line);
-
-                    match self.process_line(&mut args) {
-                        Ok(store_history) => {
-                            if store_history {
-                                rl.add_history_entry(line);
-                            } else {
-                                sodiumoxide::utils::memzero(&mut line.into_bytes());
-                            }
-                        }
-                        Err(s) => {
-                            println!("{}", s);
-                            sodiumoxide::utils::memzero(&mut line.into_bytes());
-                        }
+                    let (store_history, err_msg) = self.process_line(&mut args);
+                    if store_history {
+                        rl.add_history_entry(line);
+                    } else {
+                        sodiumoxide::utils::memzero(&mut line.into_bytes());
                     }
 
                     for a in args {
                         sodiumoxide::utils::memzero(&mut a.into_bytes());
+                    }
+
+                    if let Err(msg) = err_msg {
+                        println!("{}", msg);
                     }
                 }
                 Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -72,36 +80,38 @@ impl Wallet {
         }
     }
 
-    fn process_line(&mut self, args: &mut Vec<String>) -> Result<bool, String> {
+    fn process_line(&mut self, args: &mut Vec<String>) -> (bool, Result<(), String>) {
         if args.is_empty() {
-            return Ok(false);
+            return (false, Ok(()));
         }
         println!();
         match &*args[0] {
-            "new" => cmd::create_wallet(self, args),
-            "unlock" => cmd::unlock(self, args),
-            "create_account" => cmd::account::create(self, args),
-            "import_account" => cmd::account::import(self, args),
-            "get_account" => cmd::account::get(self, args),
-            "delete_account" => cmd::account::delete(self, args),
-            "list_accounts" => cmd::account::list(self, args),
-            "build_script" => cmd::build_script(self, args),
-            "check_script_size" => cmd::check_script_size(self, args),
-            "script_to_p2sh" => cmd::script_to_p2sh(self, args),
-            "decode_tx" => cmd::decode_tx(self, args),
-            "sign_tx" => cmd::sign_tx(self, args),
-            "unsign_tx" => cmd::unsign_tx(self, args),
-            "broadcast" => cmd::broadcast(self, args),
-            "build_mint_tx" => cmd::build_mint_tx(self, args),
-            "get_properties" => cmd::get_properties(self, args),
-            "get_block" => cmd::get_block(self, args),
+            "new" => (false, cmd::create_wallet(self, args)),
+            "unlock" => (false, cmd::unlock(self, args)),
+            "create_account" => (true, cmd::account::create(self, args)),
+            "import_account" => (true, cmd::account::import(self, args)),
+            "delete_account" => (true, cmd::account::delete(self, args)),
+            "list_accounts" => (true, cmd::account::list(self, args)),
+            "get_account" => (true, cmd::account::get(self, args)),
+            "get_addr_info" => (true, cmd::account::get_addr_info(self, args)),
+            "build_script" => (true, cmd::build_script(self, args)),
+            "check_script_size" => (true, cmd::check_script_size(self, args)),
+            "script_to_p2sh" => (true, cmd::script_to_p2sh(self, args)),
+            "decode_tx" => (true, cmd::decode_tx(self, args)),
+            "sign_tx" => (true, cmd::sign_tx(self, args)),
+            "unsign_tx" => (true, cmd::unsign_tx(self, args)),
+            "broadcast" => (true, cmd::broadcast(self, args)),
+            "build_mint_tx" => (true, cmd::build_mint_tx(self, args)),
+            "build_transfer_tx" => (true, cmd::build_transfer_tx(self, args)),
+            "get_properties" => (true, cmd::get_properties(self, args)),
+            "get_block" => (true, cmd::get_block(self, args)),
             "help" => {
                 Self::print_usage("Displaying help...");
-                Ok(true)
+                (true, Ok(()))
             }
             _ => {
                 Self::print_usage(&format!("Invalid command: {}", args[0]));
-                Ok(true)
+                (true, Ok(()))
             }
         }
     }
@@ -114,8 +124,15 @@ impl Wallet {
         cmds.push(["create_account <account>", "Create an account"]);
         cmds.push(["import_account <account> <wif>", "Import an account"]);
         cmds.push(["delete_account <account>", "Delete an existing account"]);
-        cmds.push(["get_account <account>", "Retrieve account information"]);
         cmds.push(["list_accounts", "List all accounts"]);
+        cmds.push([
+            "get_account <account>",
+            "Retrieve account keys and addresses",
+        ]);
+        cmds.push([
+            "get_addr_info <account|p2sh>",
+            "Retrieve account or P2SH address information",
+        ]);
         cmds.push(["build_script <...op>", "Builds a script"]);
         cmds.push([
             "check_script_size <raw_hex>",
@@ -139,8 +156,12 @@ impl Wallet {
             "Broadcasts a transaction to the network",
         ]);
         cmds.push([
-            "build_mint_tx <timestamp_offset> <asset> <owner_script> <attachment_path>",
+            "build_mint_tx <ts_offset> <mark_asset> <owner_script> <attachment_path>",
             "Builds a mint transaction",
+        ]);
+        cmds.push([
+            "build_transfer_tx <ts_offset> <from:script_hex> <to:p2sh> <amount:mark_asset> <fee:mark_asset> <memo>",
+            "Builds a transfer transaction",
         ]);
         cmds.push(["get_properties", "Retrieve global network properties"]);
         cmds.push(["get_block <height>", "Retrieve a block from the network"]);

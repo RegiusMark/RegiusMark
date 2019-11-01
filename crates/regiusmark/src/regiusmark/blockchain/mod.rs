@@ -1,6 +1,6 @@
 use log::info;
 use parking_lot::Mutex;
-use std::{path::Path, sync::Arc};
+use std::{collections::BTreeSet, path::Path, sync::Arc};
 
 pub mod block;
 pub mod index;
@@ -20,8 +20,8 @@ use crate::{asset::Asset, constants::*, crypto::*, script::*, tx::*};
 pub struct Properties {
     pub height: u64,
     pub owner: Box<TxVariant>,
-    pub token_supply: Asset,
     pub network_fee: Asset,
+    pub token_supply: Asset,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,7 +33,7 @@ pub struct AddressInfo {
 
 impl AddressInfo {
     pub fn total_fee(&self) -> Option<Asset> {
-        self.net_fee.add(self.addr_fee)
+        self.net_fee.checked_add(self.addr_fee)
     }
 }
 
@@ -127,15 +127,61 @@ impl Blockchain {
         self.indexer.get_chain_height()
     }
 
-    pub fn get_chain_head(&self) -> Arc<SignedBlock> {
+    pub fn get_chain_head(&self) -> Arc<Block> {
         let store = self.store.lock();
         let height = store.get_chain_height();
         store.get(height).expect("Failed to get blockchain head")
     }
 
-    pub fn get_block(&self, height: u64) -> Option<Arc<SignedBlock>> {
+    pub fn get_block(&self, height: u64) -> Option<Arc<Block>> {
         let store = self.store.lock();
         store.get(height)
+    }
+
+    pub fn get_filtered_block(
+        &self,
+        height: u64,
+        filter: &BTreeSet<ScriptHash>,
+    ) -> Option<FilteredBlock> {
+        let store = self.store.lock();
+        let block = store.get(height);
+
+        match block {
+            Some(block) => {
+                let has_match = if filter.is_empty() {
+                    false
+                } else {
+                    block
+                        .txs()
+                        .iter()
+                        .find(|&tx| match tx {
+                            TxVariant::V0(tx) => match tx {
+                                TxVariantV0::OwnerTx(owner_tx) => {
+                                    let hash = ScriptHash::from(&owner_tx.script);
+                                    filter.contains(&owner_tx.wallet) || filter.contains(&hash)
+                                }
+                                TxVariantV0::MintTx(mint_tx) => {
+                                    let hash = (&mint_tx.script).into();
+                                    filter.contains(&hash) || filter.contains(&mint_tx.to)
+                                }
+                                TxVariantV0::RewardTx(reward_tx) => filter.contains(&reward_tx.to),
+                                TxVariantV0::TransferTx(transfer_tx) => {
+                                    filter.contains(&transfer_tx.from)
+                                        || filter.contains(&transfer_tx.to)
+                                }
+                            },
+                        })
+                        .is_some()
+                };
+                if has_match {
+                    Some(FilteredBlock::Block(block))
+                } else {
+                    let signer = block.signer().unwrap().clone();
+                    Some(FilteredBlock::Header((block.header(), signer)))
+                }
+            }
+            None => None,
+        }
     }
 
     pub fn get_address_info(
@@ -195,7 +241,7 @@ impl Blockchain {
             }
         }
 
-        MARK_FEE_MIN.mul(MARK_FEE_MULT.pow(tx_count as u16)?)
+        MARK_FEE_MIN.checked_mul(MARK_FEE_MULT.checked_pow(tx_count as u16)?)
     }
 
     pub fn get_network_fee(&self) -> Option<Asset> {
@@ -219,7 +265,7 @@ impl Blockchain {
             return None;
         }
 
-        MARK_FEE_MIN.mul(MARK_FEE_NET_MULT.pow(tx_count as u16)?)
+        MARK_FEE_MIN.checked_mul(MARK_FEE_NET_MULT.checked_pow(tx_count as u16)?)
     }
 
     pub fn get_balance(&self, addr: &ScriptHash, additional_txs: &[TxVariant]) -> Option<Asset> {
@@ -230,20 +276,20 @@ impl Blockchain {
                     TxVariantV0::OwnerTx(_) => {}
                     TxVariantV0::MintTx(tx) => {
                         if &tx.to == addr {
-                            bal = bal.add(tx.amount)?;
+                            bal = bal.checked_add(tx.amount)?;
                         }
                     }
                     TxVariantV0::RewardTx(tx) => {
                         if &tx.to == addr {
-                            bal = bal.add(tx.rewards)?;
+                            bal = bal.checked_add(tx.rewards)?;
                         }
                     }
                     TxVariantV0::TransferTx(tx) => {
                         if &tx.from == addr {
-                            bal = bal.sub(tx.fee)?;
-                            bal = bal.sub(tx.amount)?;
+                            bal = bal.checked_sub(tx.fee)?;
+                            bal = bal.checked_sub(tx.amount)?;
                         } else if &tx.to == addr {
-                            bal = bal.add(tx.amount)?;
+                            bal = bal.checked_add(tx.amount)?;
                         }
                     }
                 },
@@ -253,7 +299,7 @@ impl Blockchain {
         Some(bal)
     }
 
-    pub fn insert_block(&self, block: SignedBlock) -> Result<(), verify::BlockErr> {
+    pub fn insert_block(&self, block: Block) -> Result<(), verify::BlockErr> {
         static SKIP_FLAGS: SkipFlags = SKIP_NONE | SKIP_REWARD_TX;
         self.verify_block(&block, &self.get_chain_head(), SKIP_FLAGS)?;
         let mut batch = WriteBatch::new(Arc::clone(&self.indexer));
@@ -268,8 +314,8 @@ impl Blockchain {
 
     fn verify_block(
         &self,
-        block: &SignedBlock,
-        prev_block: &SignedBlock,
+        block: &Block,
+        prev_block: &Block,
         skip_flags: SkipFlags,
     ) -> Result<(), verify::BlockErr> {
         if prev_block.height() + 1 != block.height() {
@@ -280,7 +326,7 @@ impl Blockchain {
             return Err(verify::BlockErr::InvalidPrevHash);
         }
 
-        let block_signer = block.signer();
+        let block_signer = block.signer().ok_or(verify::BlockErr::InvalidSignature)?;
         match self.get_owner() {
             TxVariant::V0(tx) => match tx {
                 TxVariantV0::OwnerTx(owner) => {
@@ -292,11 +338,11 @@ impl Blockchain {
             },
         }
 
-        if !block_signer.verify(block.calc_hash().as_ref()) {
+        if !block_signer.verify(block.calc_header_hash().as_ref()) {
             return Err(verify::BlockErr::InvalidHash);
         }
 
-        let block_txs = block.as_ref().txs();
+        let block_txs = block.txs();
         let len = block_txs.len();
         for i in 0..len {
             let tx = &block_txs[i];
@@ -388,12 +434,12 @@ impl Blockchain {
                     // Sanity check to ensure too many new coins can't be minted
                     self.get_balance(&mint_tx.to, additional_txs)
                         .ok_or(TxErr::Arithmetic)?
-                        .add(mint_tx.amount)
+                        .checked_add(mint_tx.amount)
                         .ok_or(TxErr::Arithmetic)?;
 
                     self.indexer
                         .get_token_supply()
-                        .add(mint_tx.amount)
+                        .checked_add(mint_tx.amount)
                         .ok_or(TxErr::Arithmetic)?;
                 }
                 TxVariantV0::RewardTx(tx) => {
@@ -432,9 +478,9 @@ impl Blockchain {
 
                     let bal = info
                         .balance
-                        .sub(transfer.fee)
+                        .checked_sub(transfer.fee)
                         .ok_or(TxErr::Arithmetic)?
-                        .sub(transfer.amount)
+                        .checked_sub(transfer.amount)
                         .ok_or(TxErr::Arithmetic)?;
                     check_suf_bal!(bal);
                 }
@@ -457,7 +503,7 @@ impl Blockchain {
                     batch.add_bal(&tx.to, tx.rewards);
                 }
                 TxVariantV0::TransferTx(tx) => {
-                    batch.sub_bal(&tx.from, tx.fee.add(tx.amount).unwrap());
+                    batch.sub_bal(&tx.from, tx.fee.checked_add(tx.amount).unwrap());
                     batch.add_bal(&tx.to, tx.amount);
                 }
             },
@@ -479,14 +525,17 @@ impl Blockchain {
             script: Builder::new().push(OpFrame::False).build(),
         }));
 
-        let block = Block::V0(BlockV0 {
-            height: 0,
-            previous_hash: Digest::from_slice(&[0u8; 32]).unwrap(),
-            tx_merkle_root: Digest::from_slice(&[0u8; 32]).unwrap(),
-            timestamp,
+        let mut block = Block::V0(BlockV0 {
+            header: BlockHeaderV0 {
+                height: 0,
+                previous_hash: Digest::from_slice(&[0u8; 32]).unwrap(),
+                tx_merkle_root: Digest::from_slice(&[0u8; 32]).unwrap(),
+                timestamp,
+            },
+            signer: None,
             transactions: vec![owner_tx.clone()],
-        })
-        .sign(&info.minter_key);
+        });
+        block.sign(&info.minter_key);
 
         let mut batch = WriteBatch::new(Arc::clone(&self.indexer));
         self.store.lock().insert_genesis(&mut batch, block);

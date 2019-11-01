@@ -1,3 +1,4 @@
+use crate::SubscriptionPool;
 use regiusmark::prelude::*;
 use log::{info, warn};
 use parking_lot::Mutex;
@@ -12,11 +13,17 @@ pub struct Minter {
     chain: Arc<Blockchain>,
     minter_key: KeyPair,
     tx_pool: Arc<Mutex<TxPool>>,
+    client_pool: SubscriptionPool,
     enable_stale_production: bool,
 }
 
 impl Minter {
-    pub fn new(chain: Arc<Blockchain>, minter_key: KeyPair, enable_stale_production: bool) -> Self {
+    pub fn new(
+        chain: Arc<Blockchain>,
+        minter_key: KeyPair,
+        pool: SubscriptionPool,
+        enable_stale_production: bool,
+    ) -> Self {
         match chain.get_owner() {
             TxVariant::V0(tx) => match tx {
                 TxVariantV0::OwnerTx(tx) => assert_eq!(tx.minter, minter_key.0),
@@ -27,6 +34,7 @@ impl Minter {
             chain: Arc::clone(&chain),
             minter_key,
             tx_pool: Arc::new(Mutex::new(TxPool::new(chain))),
+            client_pool: pool,
             enable_stale_production,
         }
     }
@@ -48,25 +56,23 @@ impl Minter {
 
     pub fn force_produce_block(
         &self,
-        enable_stale_production: bool,
+        force_stale_production: bool,
     ) -> Result<(), verify::BlockErr> {
         warn!("Forcing produced block...");
-        self.produce(enable_stale_production)
+        self.produce(force_stale_production)
     }
 
-    fn produce(&self, enable_stale_production: bool) -> Result<(), verify::BlockErr> {
+    fn produce(&self, force_stale_production: bool) -> Result<(), verify::BlockErr> {
         let mut transactions = self.tx_pool.lock().flush();
-        let should_produce = if enable_stale_production
-            || self.enable_stale_production
-            || !transactions.is_empty()
-        {
-            true
-        } else {
-            // We don't test the current tx pool for transactions because the tip of the chain
-            // should have no transactions to allow propagation finality of the previous block
-            let current_head = self.chain.get_chain_head();
-            !current_head.txs().is_empty()
-        };
+        let should_produce =
+            if force_stale_production || self.enable_stale_production || !transactions.is_empty() {
+                true
+            } else {
+                // We don't test the current tx pool for transactions because the tip of the chain
+                // should have no transactions to allow propagation finality of the previous block
+                let current_head = self.chain.get_chain_head();
+                !current_head.txs().is_empty()
+            };
 
         if !should_produce {
             let height = self.chain.get_chain_head().height();
@@ -81,7 +87,7 @@ impl Minter {
             let rewards = transactions
                 .iter()
                 .fold(Asset::default(), |acc, tx| match tx {
-                    TxVariant::V0(tx) => acc.add(tx.fee).unwrap(),
+                    TxVariant::V0(tx) => acc.checked_add(tx.fee).unwrap(),
                 });
             if rewards.amount > 0 {
                 // Retrieve the owner wallet here in case the owner changes, ensuring that the
@@ -106,18 +112,27 @@ impl Minter {
 
         let head = self.chain.get_chain_head();
         let block = match head.as_ref() {
-            SignedBlock::V0(block) => block.new_child(transactions).sign(&self.minter_key),
+            Block::V0(block) => {
+                let mut b = block.new_child(transactions);
+                b.sign(&self.minter_key);
+                b
+            }
         };
 
         let height = block.height();
         let tx_len = block.txs().len();
 
-        self.chain.insert_block(block)?;
+        self.chain.insert_block(block.clone())?;
         let txs = if tx_len == 1 { "tx" } else { "txs" };
         info!(
             "Produced block at height {} with {} {}",
             height, tx_len, txs
         );
+
+        self.client_pool
+            .broadcast(ResponseBody::GetBlock(FilteredBlock::Block(Arc::new(
+                block,
+            ))));
         Ok(())
     }
 

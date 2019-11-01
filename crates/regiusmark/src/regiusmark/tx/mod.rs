@@ -22,10 +22,10 @@ pub use self::tx_pool::*;
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TxType {
-    OWNER = 0,
-    MINT = 1,
-    REWARD = 2,
-    TRANSFER = 3,
+    OWNER = 0x00,
+    MINT = 0x01,
+    REWARD = 0x02,
+    TRANSFER = 0x03,
 }
 
 pub trait SerializeTx {
@@ -200,7 +200,7 @@ impl TxVariant {
         match self {
             TxVariant::V0(var) => {
                 // Tx version (2 bytes)
-                buf.push_u16(0);
+                buf.push_u16(0x00);
 
                 match var {
                     TxVariantV0::OwnerTx(tx) => tx.serialize(buf),
@@ -215,7 +215,7 @@ impl TxVariant {
     pub fn deserialize(cur: &mut Cursor<&[u8]>) -> Option<TxVariant> {
         let tx_ver = cur.take_u16().ok()?;
         match tx_ver {
-            0 => {
+            0x00 => {
                 let (base, tx_type) = Tx::deserialize_header(cur)?;
                 let mut tx = match tx_type {
                     TxType::OWNER => TxVariantV0::OwnerTx(OwnerTx::deserialize(cur, base)?),
@@ -331,7 +331,7 @@ impl SerializeTx for OwnerTx {
         v.push(TxType::OWNER as u8);
         self.serialize_header(v);
         v.push_pub_key(&self.minter);
-        v.push_script_hash(&self.wallet);
+        v.push_digest(&self.wallet.0);
         v.push_bytes(&self.script);
     }
 }
@@ -339,7 +339,7 @@ impl SerializeTx for OwnerTx {
 impl DeserializeTx<OwnerTx> for OwnerTx {
     fn deserialize(cur: &mut Cursor<&[u8]>, tx: Tx) -> Option<OwnerTx> {
         let minter = cur.take_pub_key().ok()?;
-        let wallet = cur.take_script_hash().ok()?;
+        let wallet = ScriptHash(cur.take_digest().ok()?);
         let script = cur.take_bytes().ok()?.into();
         Some(OwnerTx {
             base: tx,
@@ -364,7 +364,7 @@ impl SerializeTx for MintTx {
     fn serialize(&self, v: &mut Vec<u8>) {
         v.push(TxType::MINT as u8);
         self.serialize_header(v);
-        v.push_script_hash(&self.to);
+        v.push_digest(&self.to.0);
         v.push_asset(self.amount);
         v.push_bytes(&self.attachment);
         v.push_bytes(self.attachment_name.as_bytes());
@@ -374,7 +374,7 @@ impl SerializeTx for MintTx {
 
 impl DeserializeTx<MintTx> for MintTx {
     fn deserialize(cur: &mut Cursor<&[u8]>, tx: Tx) -> Option<Self> {
-        let to = cur.take_script_hash().ok()?;
+        let to = ScriptHash(cur.take_digest().ok()?);
         let amount = cur.take_asset().ok()?;
         let attachment = cur.take_bytes().ok()?;
         let attachment_name = {
@@ -405,14 +405,14 @@ impl SerializeTx for RewardTx {
         debug_assert_eq!(self.base.signature_pairs.len(), 0);
         v.push(TxType::REWARD as u8);
         self.serialize_header(v);
-        v.push_script_hash(&self.to);
+        v.push_digest(&self.to.0);
         v.push_asset(self.rewards);
     }
 }
 
 impl DeserializeTx<RewardTx> for RewardTx {
     fn deserialize(cur: &mut Cursor<&[u8]>, tx: Tx) -> Option<RewardTx> {
-        let key = cur.take_script_hash().ok()?;
+        let key = ScriptHash(cur.take_digest().ok()?);
         let rewards = cur.take_asset().ok()?;
 
         Some(RewardTx {
@@ -437,8 +437,8 @@ impl SerializeTx for TransferTx {
     fn serialize(&self, v: &mut Vec<u8>) {
         v.push(TxType::TRANSFER as u8);
         self.serialize_header(v);
-        v.push_script_hash(&self.from);
-        v.push_script_hash(&self.to);
+        v.push_digest(&self.from.0);
+        v.push_digest(&self.to.0);
         v.push_bytes(&self.script);
         v.push_asset(self.amount);
         v.push_bytes(&self.memo);
@@ -447,8 +447,8 @@ impl SerializeTx for TransferTx {
 
 impl DeserializeTx<TransferTx> for TransferTx {
     fn deserialize(cur: &mut Cursor<&[u8]>, tx: Tx) -> Option<TransferTx> {
-        let from = cur.take_script_hash().ok()?;
-        let to = cur.take_script_hash().ok()?;
+        let from = ScriptHash(cur.take_digest().ok()?);
+        let to = ScriptHash(cur.take_digest().ok()?);
         let script = cur.take_bytes().ok()?.into();
         let amount = cur.take_asset().ok()?;
         let memo = cur.take_bytes().ok()?;
@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize_tx_with_sigs() {
+    fn serialize_tx_with_empty_sigs() {
         let to = crypto::KeyPair::gen();
         let reward_tx = TxVariant::V0(TxVariantV0::RewardTx(RewardTx {
             base: Tx {
@@ -501,6 +501,35 @@ mod tests {
 
         let mut c = Cursor::<&[u8]>::new(&v);
         TxVariant::deserialize(&mut c).unwrap();
+    }
+
+    #[test]
+    fn serialize_tx_with_sigs() {
+        let minter = crypto::KeyPair::gen();
+        let wallet = crypto::KeyPair::gen();
+        let mut owner_tx = TxVariant::V0(TxVariantV0::OwnerTx(OwnerTx {
+            base: Tx {
+                timestamp: 1230,
+                fee: get_asset("123.00000 MARK"),
+                signature_pairs: vec![],
+            },
+            minter: minter.0.clone(),
+            wallet: wallet.0.clone().into(),
+            script: wallet.0.clone().into(),
+        }));
+
+        owner_tx.append_sign(&minter);
+        owner_tx.append_sign(&wallet);
+
+        let mut v = vec![];
+        owner_tx.serialize(&mut v);
+
+        let mut c = Cursor::<&[u8]>::new(&v);
+        let dec = TxVariant::deserialize(&mut c).unwrap();
+        assert_eq!(owner_tx, dec);
+        assert_eq!(dec.sigs().len(), 2);
+        assert_eq!(owner_tx.sigs()[0], dec.sigs()[0]);
+        assert_eq!(owner_tx.sigs()[1], dec.sigs()[1]);
     }
 
     #[test]
@@ -524,6 +553,7 @@ mod tests {
         let mut c = Cursor::<&[u8]>::new(&v);
         let (base, tx_type) = Tx::deserialize_header(&mut c).unwrap();
         let dec = OwnerTx::deserialize(&mut c, base).unwrap();
+        assert_eq!(owner_tx, dec);
 
         cmp_base_tx!(dec, 1230, "123.00000 MARK");
         assert_eq!(tx_type, TxType::OWNER);

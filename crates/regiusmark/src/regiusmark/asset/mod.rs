@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 mod precision;
 use self::precision::*;
@@ -11,7 +11,7 @@ pub use self::error::*;
 pub const MAX_STR_LEN: usize = 26;
 pub const MAX_PRECISION: u8 = 5;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Default, PartialEq, PartialOrd)]
 pub struct Asset {
     pub amount: i64,
 }
@@ -23,20 +23,20 @@ impl Asset {
     }
 
     #[inline]
-    pub fn add(&self, other: Self) -> Option<Self> {
+    pub fn checked_add(self, other: Self) -> Option<Self> {
         Some(Asset {
             amount: self.amount.checked_add(other.amount)?,
         })
     }
 
     #[inline]
-    pub fn sub(&self, other: Self) -> Option<Self> {
+    pub fn checked_sub(self, other: Self) -> Option<Self> {
         Some(Asset {
             amount: self.amount.checked_sub(other.amount)?,
         })
     }
 
-    pub fn mul(&self, other: Self) -> Option<Self> {
+    pub fn checked_mul(self, other: Self) -> Option<Self> {
         const MUL_PRECISION: u8 = MAX_PRECISION * 2;
         let mul = i128::from(self.amount).checked_mul(i128::from(other.amount))?;
         let final_mul = set_decimals_i128(mul, MUL_PRECISION, MAX_PRECISION)?;
@@ -48,7 +48,7 @@ impl Asset {
         })
     }
 
-    pub fn div(&self, other: Self) -> Option<Self> {
+    pub fn checked_div(self, other: Self) -> Option<Self> {
         if other.amount == 0 {
             return None;
         }
@@ -59,7 +59,7 @@ impl Asset {
         })
     }
 
-    pub fn pow(&self, num: u16) -> Option<Self> {
+    pub fn checked_pow(self, num: u16) -> Option<Self> {
         if num == 0 {
             return Some(Asset {
                 amount: set_decimals_i64(1, 0, MAX_PRECISION)?,
@@ -87,6 +87,12 @@ impl Asset {
         Some(Asset {
             amount: res.to_i64()?,
         })
+    }
+}
+
+impl fmt::Debug for Asset {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "Asset(\"{}\")", self.to_string())
     }
 }
 
@@ -258,57 +264,63 @@ mod tests {
 
         let a = get_asset("123.45600 MARK");
         c(
-            a.add(get_asset("2.00000 MARK")).unwrap(),
+            a.checked_add(get_asset("2.00000 MARK")).unwrap(),
             "125.45600 MARK",
         );
         c(
-            a.add(get_asset("-2.00000 MARK")).unwrap(),
-            "121.45600 MARK",
-        );
-        c(a.add(get_asset(".00001 MARK")).unwrap(), "123.45601 MARK");
-        c(
-            a.sub(get_asset("2.00000 MARK")).unwrap(),
+            a.checked_add(get_asset("-2.00000 MARK")).unwrap(),
             "121.45600 MARK",
         );
         c(
-            a.sub(get_asset("-2.00000 MARK")).unwrap(),
+            a.checked_add(get_asset(".00001 MARK")).unwrap(),
+            "123.45601 MARK",
+        );
+        c(
+            a.checked_sub(get_asset("2.00000 MARK")).unwrap(),
+            "121.45600 MARK",
+        );
+        c(
+            a.checked_sub(get_asset("-2.00000 MARK")).unwrap(),
             "125.45600 MARK",
         );
         c(
-            a.mul(get_asset("100000.11111 MARK")).unwrap(),
+            a.checked_mul(get_asset("100000.11111 MARK")).unwrap(),
             "12345613.71719 MARK",
         );
         c(
-            a.mul(get_asset("-100000.11111 MARK")).unwrap(),
+            a.checked_mul(get_asset("-100000.11111 MARK")).unwrap(),
             "-12345613.71719 MARK",
         );
-        c(a.div(get_asset("23.00000 MARK")).unwrap(), "5.36765 MARK");
         c(
-            a.div(get_asset("-23.00000 MARK")).unwrap(),
+            a.checked_div(get_asset("23.00000 MARK")).unwrap(),
+            "5.36765 MARK",
+        );
+        c(
+            a.checked_div(get_asset("-23.00000 MARK")).unwrap(),
             "-5.36765 MARK",
         );
-        c(a.pow(2).unwrap(), "15241.38393 MARK");
-        c(a.pow(3).unwrap(), "1881640.29520 MARK");
+        c(a.checked_pow(2).unwrap(), "15241.38393 MARK");
+        c(a.checked_pow(3).unwrap(), "1881640.29520 MARK");
         c(a, "123.45600 MARK");
 
         c(
-            get_asset("1.00020 MARK").pow(1000).unwrap(),
+            get_asset("1.00020 MARK").checked_pow(1000).unwrap(),
             "1.22137 MARK",
         );
         c(
             get_asset("10.00000 MARK")
-                .div(get_asset("2.00000 MARK"))
+                .checked_div(get_asset("2.00000 MARK"))
                 .unwrap(),
             "5.00000 MARK",
         );
         c(
             get_asset("5.00000 MARK")
-                .div(get_asset("10.00000 MARK"))
+                .checked_div(get_asset("10.00000 MARK"))
                 .unwrap(),
             "0.50000 MARK",
         );
 
-        assert!(a.div(get_asset("0.00000 MARK")).is_none());
+        assert!(a.checked_div(get_asset("0.00000 MARK")).is_none());
     }
 
     #[test]
@@ -316,10 +328,10 @@ mod tests {
         let a = get_asset("10.00000 MARK");
         let b = get_asset("92233720368547.75807 MARK");
 
-        assert_eq!(a.add(b), None);
-        assert_eq!(a.mul(Asset::new(-1)).unwrap().sub(b), None);
-        assert_eq!(a.div(Asset::new(0)), None);
-        assert_eq!(a.mul(b), None);
+        assert_eq!(a.checked_add(b), None);
+        assert_eq!(a.checked_mul(Asset::new(-1)).unwrap().checked_sub(b), None);
+        assert_eq!(a.checked_div(Asset::new(0)), None);
+        assert_eq!(a.checked_mul(b), None);
     }
 
     fn get_asset(s: &str) -> Asset {

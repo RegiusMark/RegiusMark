@@ -3,15 +3,16 @@ use regiusmark::{
     blockchain::{GenesisBlockInfo, ReindexOpts},
     prelude::*,
 };
-use regiusmark_server::{index, prelude::*, ServerData};
+use regiusmark_server::{prelude::*, process_message, ServerData, WsState};
 use sodiumoxide::randombytes;
 use std::{
     env, fs,
     io::Cursor,
+    net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use warp::Filter;
+use tokio_tungstenite::tungstenite::Message;
 
 type Indexed = bool;
 
@@ -66,13 +67,22 @@ impl TestMinter {
 
             let head = chain.get_chain_head();
             let child = match head.as_ref() {
-                SignedBlock::V0(block) => block.new_child(txs).sign(&info.minter_key),
+                Block::V0(block) => {
+                    let mut b = block.new_child(txs);
+                    b.sign(&info.minter_key);
+                    b
+                }
             };
             chain.insert_block(child).unwrap();
         }
 
-        let minter = Minter::new(Arc::clone(&chain), minter_key, false);
-        let data = ServerData { chain, minter };
+        let sub_pool = SubscriptionPool::default();
+        let minter = Minter::new(Arc::clone(&chain), minter_key, sub_pool.clone(), false);
+        let data = ServerData {
+            chain,
+            minter,
+            sub_pool,
+        };
         Self(data, info, tmp_dir, true)
     }
 
@@ -99,7 +109,9 @@ impl TestMinter {
         let chain = Arc::clone(&self.0.chain);
         assert_eq!(chain.index_status(), IndexStatus::None);
         chain.reindex(ReindexOpts { auto_trim: true });
-        self.0.minter = Minter::new(chain, self.1.minter_key.clone(), false);
+        let key = self.1.minter_key.clone();
+        let pool = self.0.sub_pool.clone();
+        self.0.minter = Minter::new(chain, key, pool, false);
         self.3 = true;
     }
 
@@ -115,38 +127,31 @@ impl TestMinter {
         self.0.minter.force_produce_block(true)
     }
 
-    pub fn request(&self, req: MsgRequest) -> MsgResponse {
-        self.send_request(net::RequestType::Single(req))
-            .unwrap_single()
+    pub fn request(&self, body: RequestBody) -> ResponseBody {
+        let (tx, _) = futures::sync::mpsc::unbounded();
+        let mut state = WsState::new(SocketAddr::from(([127, 0, 0, 1], 7777)), tx);
+        let res = self.send_request(&mut state, net::Request { id: 0, body });
+        res.body
     }
 
-    pub fn batch_request(&self, reqs: Vec<MsgRequest>) -> Vec<MsgResponse> {
-        self.send_request(net::RequestType::Batch(reqs))
-            .unwrap_batch()
-    }
-
-    pub fn send_request(&self, req: net::RequestType) -> net::ResponseType {
+    pub fn send_request(&self, state: &mut WsState, req: net::Request) -> net::Response {
         let mut buf = Vec::with_capacity(1_048_576);
         req.serialize(&mut buf);
-        self.raw_request(&buf)
+        self.raw_request(state, buf)
     }
 
-    pub fn raw_request(&self, body: &[u8]) -> net::ResponseType {
+    pub fn raw_request(&self, state: &mut WsState, req_bytes: Vec<u8>) -> net::Response {
         assert!(
             self.3,
             "attempting to send a request to an unindexed minter"
         );
 
-        let data = Arc::new(self.0.clone());
-        let filter = regiusmark_server::app_filter!(data);
-        let res = warp::test::request()
-            .method("POST")
-            .header("content-length", body.len())
-            .body(body)
-            .reply(&filter);
-        let body = res.into_body();
-        let mut cur = Cursor::<&[u8]>::new(&body);
-        net::ResponseType::deserialize(&mut cur).unwrap()
+        let res = match process_message(&self.0, state, Message::Binary(req_bytes)).unwrap() {
+            Message::Binary(res) => res,
+            _ => panic!("Expected binary response"),
+        };
+        let mut cur = Cursor::<&[u8]>::new(&res);
+        net::Response::deserialize(&mut cur).unwrap()
     }
 }
 

@@ -1,3 +1,12 @@
+use crate::Wallet;
+use regiusmark::net::{Request, RequestBody, Response, ResponseBody};
+use std::{
+    io::Cursor,
+    net::{SocketAddr, TcpStream, ToSocketAddrs},
+    time::Duration,
+};
+use tungstenite::{client, handshake::client::Request as WsReq, protocol::Message};
+
 macro_rules! check_unlocked {
     ($self:expr) => {
         if $self.db.state() != DbState::Unlocked {
@@ -24,37 +33,6 @@ macro_rules! check_at_least_args {
     };
 }
 
-macro_rules! send_rpc_req {
-    ($wallet:expr, $req:expr) => {{
-        let body = {
-            let mut buf = Vec::with_capacity(4096);
-            regiusmark::net::RequestType::Single($req).serialize(&mut buf);
-            buf
-        };
-        let res = Client::new().post($wallet.url.clone()).body(body).send();
-        match res {
-            Ok(mut res) => {
-                let len = res.content_length().unwrap_or(0);
-                let mut content = Vec::with_capacity(len as usize);
-                res.read_to_end(&mut content)
-                    .map_err(|e| format!("{}", e))?;
-                let mut cursor = Cursor::<&[u8]>::new(&content);
-                regiusmark::net::ResponseType::deserialize(&mut cursor)
-                    .map(|res| res.unwrap_single())
-                    .map_err(|e| format!("Failed to deserialize response: {}", e))
-            }
-            Err(e) => Err(format!("{}", e)),
-        }
-    }};
-}
-
-macro_rules! send_print_rpc_req {
-    ($wallet:expr, $req:expr) => {
-        let res = send_rpc_req!($wallet, $req)?;
-        println!("{:#?}", res);
-    };
-}
-
 macro_rules! hex_to_bytes {
     ($string:expr) => {{
         let len = $string.len() / 2;
@@ -65,4 +43,70 @@ macro_rules! hex_to_bytes {
             Err(_) => Err("invalid hex string"),
         }
     }};
+}
+
+pub fn send_print_rpc_req(wallet: &mut Wallet, body: RequestBody) {
+    let res = send_rpc_req(wallet, body);
+    println!("{:#?}", res);
+}
+
+pub fn send_rpc_req(wallet: &mut Wallet, body: RequestBody) -> Result<ResponseBody, String> {
+    let buf = {
+        let req_id = {
+            let id = wallet.req_id;
+            wallet.req_id += 1;
+            if wallet.req_id == u32::max_value() {
+                wallet.req_id = 0;
+            }
+            id
+        };
+
+        let mut buf = Vec::with_capacity(8192);
+        let req = Request { id: req_id, body };
+        req.serialize(&mut buf);
+        buf
+    };
+
+    let mut ws = {
+        let mut addr = (wallet.url.host_str().unwrap(), wallet.url.port().unwrap())
+            .to_socket_addrs()
+            .unwrap();
+
+        let addr = loop {
+            match addr.next() {
+                Some(addr) => match addr {
+                    SocketAddr::V4(_) => break addr,
+                    _ => continue,
+                },
+                None => return Err("No resolved IPv4 addresses found from host".to_owned()),
+            }
+        };
+
+        let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(1))
+            .map_err(|e| format!("Failed to connect to host: {:?}", e))?;
+        let (ws, _) = client(
+            WsReq {
+                url: wallet.url.clone(),
+                extra_headers: None,
+            },
+            stream,
+        )
+        .map_err(|e| format!("Failed to init ws socket: {:?}", e))?;
+        ws
+    };
+    ws.write_message(Message::Binary(buf)).unwrap();
+
+    let res = loop {
+        let msg = ws.read_message().unwrap();
+        match msg {
+            Message::Binary(res) => break res,
+            _ => continue,
+        }
+    };
+    let _ = ws.close(None);
+
+    let mut cursor = Cursor::<&[u8]>::new(&res);
+    Response::deserialize(&mut cursor)
+        .map(|res| res.body)
+        .map_err(|e| format!("Failed to deserialize response: {}", e))
 }

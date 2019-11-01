@@ -2,7 +2,8 @@ use regiusmark::{
     constants,
     prelude::{net::ErrorKind, *},
 };
-use std::io::Cursor;
+use regiusmark_server::WsState;
+use std::{collections::BTreeSet, net::SocketAddr};
 
 mod common;
 pub use common::*;
@@ -23,45 +24,153 @@ fn successful_broadcast() {
     tx.append_sign(&minter.genesis_info().wallet_keys[1]);
     tx.append_sign(&minter.genesis_info().wallet_keys[0]);
 
-    let res = minter.request(MsgRequest::Broadcast(tx));
-    assert_eq!(res, MsgResponse::Broadcast);
+    let res = minter.request(RequestBody::Broadcast(tx));
+    assert_eq!(res, ResponseBody::Broadcast);
 }
 
 #[test]
 fn get_properties() {
     let minter = TestMinter::new();
-    let res = minter.request(MsgRequest::GetProperties);
+    let res = minter.request(RequestBody::GetProperties);
     let chain_props = minter.chain().get_properties();
     assert!(!res.is_err());
-    assert_eq!(res, MsgResponse::GetProperties(chain_props));
+    assert_eq!(res, ResponseBody::GetProperties(chain_props));
 }
 
 #[test]
-fn get_block() {
+fn get_block_unfiltered() {
     let minter = TestMinter::new();
-    let res = minter.request(MsgRequest::GetBlock(0));
+    let res = minter.request(RequestBody::GetBlock(0));
 
     assert!(!res.is_err());
 
     let other = minter.chain().get_block(0).unwrap();
-    assert_eq!(res, MsgResponse::GetBlock((*other).clone()));
+    assert_eq!(res, ResponseBody::GetBlock(FilteredBlock::Block(other)));
 
-    let res = minter.request(MsgRequest::GetBlock(2));
+    let res = minter.request(RequestBody::GetBlock(2));
     assert!(res.is_err());
-    assert_eq!(res, MsgResponse::Error(ErrorKind::InvalidHeight));
+    assert_eq!(res, ResponseBody::Error(ErrorKind::InvalidHeight));
+}
+
+#[test]
+fn get_block_filtered() {
+    let mut state = create_uninit_state();
+    let minter = TestMinter::new();
+
+    let mut filter = BTreeSet::<ScriptHash>::new();
+    filter.insert((&minter.genesis_info().script).into());
+    let res = minter
+        .send_request(
+            &mut state,
+            net::Request {
+                id: 0,
+                body: RequestBody::SetBlockFilter(BlockFilter::Addr(filter.clone())),
+            },
+        )
+        .body;
+    assert_eq!(res, ResponseBody::SetBlockFilter);
+    assert!(!res.is_err());
+
+    assert_eq!(state.filter(), Some(&filter));
+
+    {
+        let block = minter.chain().get_block(1).unwrap();
+        let res = minter
+            .send_request(
+                &mut state,
+                net::Request {
+                    id: 0,
+                    body: RequestBody::GetBlock(1),
+                },
+            )
+            .body;
+        assert_eq!(res, ResponseBody::GetBlock(FilteredBlock::Block(block)));
+    }
+
+    {
+        // Produce block 2, should be filtered
+        minter.produce_block().unwrap();
+
+        let tx = {
+            let mut tx = TxVariant::V0(TxVariantV0::TransferTx(TransferTx {
+                base: create_tx_header("1.00000 MARK"),
+                from: (&minter.genesis_info().script).into(),
+                to: (&KeyPair::gen().0).into(),
+                amount: get_asset("1.00000 MARK"),
+                memo: vec![],
+                script: minter.genesis_info().script.clone(),
+            }));
+            tx.append_sign(&minter.genesis_info().wallet_keys[3]);
+            tx.append_sign(&minter.genesis_info().wallet_keys[0]);
+            tx
+        };
+        let res = minter.request(RequestBody::Broadcast(tx));
+        assert_eq!(res, ResponseBody::Broadcast);
+        // Produce block 3, should not be filtered
+        minter.produce_block().unwrap();
+    }
+
+    {
+        let block = minter.chain().get_block(2).unwrap();
+        let res = minter
+            .send_request(
+                &mut state,
+                net::Request {
+                    id: 0,
+                    body: RequestBody::GetBlock(2),
+                },
+            )
+            .body;
+
+        let signer = block.signer().unwrap().clone();
+        assert_eq!(
+            res,
+            ResponseBody::GetBlock(FilteredBlock::Header((block.header(), signer)))
+        );
+    }
+
+    {
+        let block = minter.chain().get_block(3).unwrap();
+        let res = minter
+            .send_request(
+                &mut state,
+                net::Request {
+                    id: 0,
+                    body: RequestBody::GetBlock(3),
+                },
+            )
+            .body;
+        assert_eq!(res, ResponseBody::GetBlock(FilteredBlock::Block(block)));
+    }
+}
+
+#[test]
+fn get_block_header() {
+    let minter = TestMinter::new();
+    let res = minter.request(RequestBody::GetBlockHeader(0));
+    assert!(!res.is_err());
+
+    let other = minter.chain().get_block(0).unwrap();
+    let header = other.header();
+    let signer = other.signer().unwrap().clone();
+    assert_eq!(res, ResponseBody::GetBlockHeader { header, signer });
+
+    let res = minter.request(RequestBody::GetBlockHeader(2));
+    assert!(res.is_err());
+    assert_eq!(res, ResponseBody::Error(ErrorKind::InvalidHeight));
 }
 
 #[test]
 fn get_address_info() {
     let minter = TestMinter::new();
     let addr = (&minter.genesis_info().script).into();
-    let res = minter.request(MsgRequest::GetAddressInfo(addr));
+    let res = minter.request(RequestBody::GetAddressInfo(addr));
     assert!(!res.is_err());
 
-    let expected = MsgResponse::GetAddressInfo(AddressInfo {
+    let expected = ResponseBody::GetAddressInfo(AddressInfo {
         net_fee: constants::MARK_FEE_MIN,
         addr_fee: constants::MARK_FEE_MIN
-            .mul(constants::MARK_FEE_MULT)
+            .checked_mul(constants::MARK_FEE_MULT)
             .unwrap(),
         balance: get_asset("1000.00000 MARK"),
     });
@@ -72,46 +181,108 @@ fn get_address_info() {
 fn error_with_bytes_remaining() {
     let minter = TestMinter::new();
 
-    let body = {
-        let req = net::RequestType::Batch(vec![MsgRequest::GetBlock(0)]);
+    let buf = {
+        let req = net::Request {
+            id: 123456789,
+            body: RequestBody::GetBlock(0),
+        };
         let mut buf = Vec::with_capacity(4096);
         req.serialize(&mut buf);
 
-        // Set the batch len to 0
-        buf[1..=4].iter_mut().for_each(|x| *x = 0);
+        // Push an extra byte that should trigger the error
+        buf.push(0);
 
         buf
     };
 
-    // Confirm the length is actually 0 in case the binary format changes
-    match net::RequestType::deserialize(&mut Cursor::new(&body)).unwrap() {
-        net::RequestType::Batch(reqs) => assert_eq!(reqs.len(), 0),
-        _ => panic!("Expected batch request type"),
-    }
-
-    let res = minter.raw_request(&body);
-    let res = res.unwrap_single();
-    assert!(res.is_err());
-    assert_eq!(res, MsgResponse::Error(ErrorKind::BytesRemaining));
+    let res = minter.raw_request(&mut create_uninit_state(), buf);
+    assert!(res.body.is_err());
+    assert_eq!(res.id, 123456789);
+    assert_eq!(res.body, ResponseBody::Error(ErrorKind::BytesRemaining));
 }
 
 #[test]
-fn batch_preserves_order() {
+fn eof_returns_max_u32_id() {
     let minter = TestMinter::new();
-    let responses = minter.batch_request(vec![
-        MsgRequest::GetBlock(0),
-        MsgRequest::GetBlock(2),
-        MsgRequest::GetBlock(1),
-    ]);
-    assert_eq!(responses.len(), 3);
 
-    let block_0 = minter.chain().get_block(0).unwrap();
-    let block_1 = minter.chain().get_block(1).unwrap();
+    let buf = {
+        let req = net::Request {
+            id: 123456789,
+            body: RequestBody::GetBlock(0),
+        };
+        let mut buf = Vec::with_capacity(4096);
+        req.serialize(&mut buf);
 
-    assert_eq!(responses[0], MsgResponse::GetBlock((*block_0).clone()));
-    assert_eq!(
-        responses[1],
-        MsgResponse::Error(net::ErrorKind::InvalidHeight)
-    );
-    assert_eq!(responses[2], MsgResponse::GetBlock((*block_1).clone()));
+        // Delete an extra byte causing an EOF error triggering a failure to deserialize the message
+        buf.truncate(buf.len() - 1);
+
+        buf
+    };
+
+    let res = minter.raw_request(&mut create_uninit_state(), buf);
+    assert!(res.body.is_err());
+    assert_eq!(res.id, u32::max_value());
+    assert_eq!(res.body, ResponseBody::Error(ErrorKind::Io));
+}
+
+#[test]
+fn u32_max_val_with_valid_request_fails() {
+    let minter = TestMinter::new();
+    let addr = (&minter.genesis_info().script).into();
+
+    let buf = {
+        let req = net::Request {
+            id: u32::max_value(),
+            body: RequestBody::GetAddressInfo(addr),
+        };
+        let mut buf = Vec::with_capacity(4096);
+        req.serialize(&mut buf);
+
+        buf
+    };
+    let res = minter.raw_request(&mut create_uninit_state(), buf);
+
+    let expected = net::Response {
+        id: u32::max_value(),
+        body: ResponseBody::Error(ErrorKind::Io),
+    };
+    assert_eq!(res, expected);
+    assert!(res.body.is_err());
+}
+
+#[test]
+fn response_id_matches_request() {
+    let minter = TestMinter::new();
+    let addr = (&minter.genesis_info().script).into();
+
+    let buf = {
+        let req = net::Request {
+            id: 123456789,
+            body: RequestBody::GetAddressInfo(addr),
+        };
+        let mut buf = Vec::with_capacity(4096);
+        req.serialize(&mut buf);
+
+        buf
+    };
+    let res = minter.raw_request(&mut create_uninit_state(), buf);
+
+    assert!(!res.body.is_err());
+
+    let expected = net::Response {
+        id: 123456789,
+        body: ResponseBody::GetAddressInfo(AddressInfo {
+            net_fee: constants::MARK_FEE_MIN,
+            addr_fee: constants::MARK_FEE_MIN
+                .checked_mul(constants::MARK_FEE_MULT)
+                .unwrap(),
+            balance: get_asset("1000.00000 MARK"),
+        }),
+    };
+    assert_eq!(res, expected);
+}
+
+fn create_uninit_state() -> WsState {
+    let (tx, _) = futures::sync::mpsc::unbounded();
+    WsState::new(SocketAddr::from(([127, 0, 0, 1], 7777)), tx)
 }
