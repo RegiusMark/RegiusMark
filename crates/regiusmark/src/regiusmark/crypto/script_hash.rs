@@ -101,7 +101,7 @@ mod tests {
         let kp =
             PrivateKey::from_wif("3GAD3otqozDorfu1iDpMQJ1gzWp8PRFEjVHZivZdedKW3i3KtM").unwrap();
 
-        let wif = "GOD78WVbdCHAwEVajuPKprZ6je6t1zvTieLEsEcKiYVtTjbpfjqLR";
+        let wif = "RGM78WVbdCHAwEVajuPKprZ6je6t1zvTieLEsEcKiYVtTjbpfjqLR";
         let hash = ScriptHash::from_wif(&wif).unwrap();
         assert_eq!(hash.to_wif().as_ref(), wif);
         assert_eq!(ScriptHash::from(Script::from(kp.0.clone())), hash);

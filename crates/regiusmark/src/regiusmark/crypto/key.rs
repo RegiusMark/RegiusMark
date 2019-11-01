@@ -7,7 +7,7 @@ use super::error::*;
 use super::sigpair::*;
 use super::{double_sha256, Signature};
 
-pub const PUB_ADDRESS_PREFIX: &str = "GOD";
+pub const PUB_ADDRESS_PREFIX: &str = "RGM";
 const PRIV_BUF_PREFIX: u8 = 0x01;
 const PUB_BUF_PREFIX: u8 = 0x02;
 
@@ -223,7 +223,7 @@ mod tests {
         );
         assert_eq!(
             &*kp.0.to_wif(),
-            "GOD52QZDBUStV5CudxvKf6bPsQeN7oeKTkEm2nAU1vAUqNVexGTb8"
+            "RGM52QZDBUStV5CudxvKf6bPsQeN7oeKTkEm2nAU1vAUqNVexGTb8"
         );
     }
 
