@@ -1,7 +1,7 @@
 use clap::{App, Arg};
 use env_logger::{Env, DEFAULT_FILTER_ENV};
-use regiusmark::{blockchain::ReindexOpts, prelude::*};
 use log::info;
+use regiusmark::{blockchain::ReindexOpts, prelude::*};
 use serde::Deserialize;
 use std::{
     env, fs,
