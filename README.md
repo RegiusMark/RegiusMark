@@ -1,5 +1,5 @@
 # Regius Mark
-[![Build Status](https://travis-ci.com/RegiusMark/RegiusMark.svg?branch=master)](https://travis-ci.com/RegiusMark/RegiusMark)
+[![Build Status](https://travis-ci.com/RegiusMark/regiusmark.svg?branch=master)](https://travis-ci.com/RegiusMark/regiusmark)
 
 https://regiusmark.io
 
