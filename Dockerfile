@@ -1,7 +1,6 @@
-FROM rust:1.38-slim-buster
+##### Stage 0
+FROM rust:1.39-slim-buster
 WORKDIR /app
-
-ENV REGIUSMARK_HOME="/data"
 
 RUN apt-get update && \
     apt-get install -y \
@@ -15,8 +14,15 @@ RUN rustup component add rustfmt
 
 # Copy and build
 COPY . .
-RUN cargo install --path ./crates/server \
-    && rm -r ./target
+RUN cargo build -p regiusmark-server --release
+
+##### Stage 1
+FROM debian:buster-slim
+WORKDIR /app
+
+ENV REGIUSMARK_HOME="/data"
+
+COPY --from=0 /app/target/release/regiusmark-server /app
 
 STOPSIGNAL SIGINT
-ENTRYPOINT ["regiusmark-server"]
+ENTRYPOINT ["/app/regiusmark-server"]
