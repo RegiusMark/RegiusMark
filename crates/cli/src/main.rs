@@ -16,7 +16,7 @@ fn main() {
 
     regiusmark::init().unwrap();
     let app = App::new("regiusmark")
-        .about("RegiusMark core CLI")
+        .about("Regius Mark core CLI")
         .version(env!("CARGO_PKG_VERSION"))
         .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::SubcommandRequiredElseHelp)
@@ -47,9 +47,9 @@ fn main() {
             if !Path::is_dir(&home) {
                 let res = std::fs::create_dir(&home);
                 res.unwrap_or_else(|_| panic!("Failed to create dir at {:?}", &home));
-                println!("Created RegiusMark home at {:?}", &home);
+                println!("Created Regius Mark home at {:?}", &home);
             } else {
-                println!("Found RegiusMark home at {:?}", &home);
+                println!("Found Regius Mark home at {:?}", &home);
             }
             home
         };

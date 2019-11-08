@@ -29,7 +29,7 @@ fn main() {
 
     let home = home.to_string_lossy();
     let args = App::new("regiusmark-server")
-        .about("RegiusMark core server daemon")
+        .about("Regius Mark core server daemon")
         .version(env!("CARGO_PKG_VERSION"))
         .arg(
             Arg::with_name("home")
@@ -55,9 +55,9 @@ fn main() {
         if !Path::is_dir(&home) {
             let res = std::fs::create_dir(&home);
             res.unwrap_or_else(|_| panic!("Failed to create dir at {:?}", &home));
-            info!("Created RegiusMark home at {:?}", &home);
+            info!("Created Regius Mark home at {:?}", &home);
         } else {
-            info!("Found RegiusMark home at {:?}", &home);
+            info!("Found Regius Mark home at {:?}", &home);
         }
         let blocklog_loc = Path::join(&home, "blklog");
         let index_loc = Path::join(&home, "index");
