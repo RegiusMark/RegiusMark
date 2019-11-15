@@ -1,12 +1,15 @@
 [package]
 name = "regiusmark"
-version = "0.0.1"
-authors = ["Samuel Grenier <samrg472@gmail.com>"]
+version = "0.1.0"
 edition = "2018"
-
-[lib]
-name = "regiusmark"
-path = "src/regiusmark/lib.rs"
+authors = ["Samuel Grenier <samrg472@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/RegiusMark/regiusmark"
+readme = "README.md"
+homepage = "https://regiusmark.io"
+description = """
+Regius Mark core blockchain library.
+"""
 
 [dependencies]
 bs58 = "0.3.0"

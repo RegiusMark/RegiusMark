@@ -4,13 +4,8 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y \
-        libsodium23 \
-        libsodium-dev \
         make \
         clang
-
-# Required for libsodium-sys crate
-RUN rustup component add rustfmt
 
 # Copy and build
 COPY . .

@@ -11,9 +11,19 @@ a decentralized system.
 
 ## Overview
 
-This repository provides Regius Mark's core software and library implementations
-and is to be used as a point of reference when developing software in other
-languages.
+Regius Mark's core library and blockchain implementation.
+
+The library API provides:
+
+- Building transactions
+- Building network messages
+- Creating scripts and converting them to P2SH addresses used for receiving
+- Generating keys and optionally converting them to a default P2SH address
+- Backend storage for blocks and indexing
+- Validating blocks and transactions
+
+This library does not provide a network client implementation remaining agnostic
+to any networking library.
 
 [![Build Status](https://travis-ci.com/RegiusMark/regiusmark.svg?branch=master)](https://travis-ci.com/RegiusMark/regiusmark)
 
@@ -22,11 +32,14 @@ languages.
 Regius Mark is built against the latest stable version of the compiler. Any
 previous versions are not guaranteed to compile.
 
-## Project Layout
+## Developing
 
-Each crate lives under the `crates` directory. Developers looking to use Regius
-Mark in their software will want the library under `crates/regiusmark`.
+When bugs are fixed, regression tests should be added. New features likewise
+should have corresponding tests added to ensure correct behavior.
 
-- `crates/cli`: Provides a CLI for the wallet and other utilities.
-- `crates/regiusmark`: Core Regius Mark library.
-- `crates/server`: Core Regius Mark server daemon.
+Run the test suite:
+```
+$ cargo test
+```
+
+The crate should build and tests should pass.
