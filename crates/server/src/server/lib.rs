@@ -1,10 +1,11 @@
-use futures::sync::mpsc::{self, UnboundedSender};
-use log::{error, info, warn};
+use futures::sync::mpsc::{self, Sender};
 use regiusmark::{blockchain::ReindexOpts, net::*, prelude::*};
-use std::{collections::BTreeSet, io::Cursor, net::SocketAddr, path::PathBuf, sync::Arc};
+use log::{error, info, warn};
+use std::{io::Cursor, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{net::TcpListener, prelude::*};
 use tokio_tungstenite::tungstenite::{protocol, Message};
 
+mod block_range;
 mod forever;
 pub mod minter;
 pub mod pool;
@@ -14,6 +15,7 @@ pub mod prelude {
     pub use super::pool::SubscriptionPool;
 }
 
+use block_range::AsyncBlockRange;
 use prelude::*;
 
 pub struct ServerOpts {
@@ -91,7 +93,7 @@ fn start_server(server_addr: SocketAddr, data: Arc<ServerData>) {
                 .and_then(move |ws| {
                     info!("[{}] Connection opened", peer_addr);
 
-                    let (tx, rx) = mpsc::unbounded();
+                    let (tx, rx) = mpsc::channel(32);
                     let (sink, stream) = ws.split();
                     let mut state = WsState::new(peer_addr, tx.clone());
 
@@ -100,9 +102,16 @@ fn start_server(server_addr: SocketAddr, data: Arc<ServerData>) {
                         move |msg| {
                             let res = process_message(&data, &mut state, msg);
                             if let Some(res) = res {
-                                tx.unbounded_send(res).unwrap();
+                                let peer_addr = peer_addr.clone();
+                                future::Either::A(tx.clone().send(res).then(move |res| {
+                                    if let Err(_) = res {
+                                        error!("[{}] Failed to send message", peer_addr);
+                                    }
+                                    Ok(())
+                                }))
+                            } else {
+                                future::Either::B(future::ok(()))
                             }
-                            Ok(())
                         }
                     });
                     let ws_writer = rx.forward(sink.sink_map_err(move |e| {
@@ -148,9 +157,9 @@ pub fn process_message(data: &ServerData, state: &mut WsState, msg: Message) -> 
                             body: ResponseBody::Error(ErrorKind::BytesRemaining),
                         }
                     } else {
-                        Response {
-                            id,
-                            body: handle_request(data, state, req.body),
+                        match handle_request(data, state, req) {
+                            Some(res) => Response { id, body: res },
+                            None => return None,
                         }
                     }
                 }
@@ -175,8 +184,8 @@ pub fn process_message(data: &ServerData, state: &mut WsState, msg: Message) -> 
     }
 }
 
-fn handle_request(data: &ServerData, state: &mut WsState, body: RequestBody) -> ResponseBody {
-    match body {
+fn handle_request(data: &ServerData, state: &mut WsState, req: Request) -> Option<ResponseBody> {
+    Some(match req.body {
         RequestBody::Broadcast(tx) => {
             let res = data.minter.push_tx(tx);
             match res {
@@ -185,18 +194,15 @@ fn handle_request(data: &ServerData, state: &mut WsState, body: RequestBody) -> 
             }
         }
         RequestBody::SetBlockFilter(filter) => {
-            match filter {
-                BlockFilter::Addr(addrs) => {
-                    if addrs.len() > 16 {
-                        return ResponseBody::Error(ErrorKind::InvalidRequest);
-                    }
-                    state.filter = Some(addrs);
-                }
-                BlockFilter::None => {
-                    state.filter = None;
-                }
+            if filter.len() > 16 {
+                return Some(ResponseBody::Error(ErrorKind::InvalidRequest));
             }
+            state.filter = Some(filter);
             ResponseBody::SetBlockFilter
+        }
+        RequestBody::ClearBlockFilter => {
+            state.filter = None;
+            ResponseBody::ClearBlockFilter
         }
         RequestBody::Subscribe => {
             data.sub_pool.insert(state.addr(), state.sender());
@@ -220,14 +226,51 @@ fn handle_request(data: &ServerData, state: &mut WsState, body: RequestBody) -> 
                 None => ResponseBody::Error(ErrorKind::InvalidHeight),
             },
         },
-        RequestBody::GetBlockHeader(height) => match data.chain.get_block(height) {
-            Some(block) => {
-                let header = block.header();
-                let signer = block.signer().expect("cannot get unsigned block").clone();
-                ResponseBody::GetBlockHeader { header, signer }
-            }
+        RequestBody::GetFullBlock(height) => match data.chain.get_block(height) {
+            Some(block) => ResponseBody::GetFullBlock(block),
             None => ResponseBody::Error(ErrorKind::InvalidHeight),
         },
+        RequestBody::GetBlockRange(min_height, max_height) => {
+            let range = AsyncBlockRange::try_new(Arc::clone(&data.chain), min_height, max_height);
+            match range {
+                Some(mut range) => {
+                    if let Some(filter) = state.filter() {
+                        range.set_filter(Some(filter.clone()));
+                    }
+
+                    let peer_addr = state.addr();
+                    let tx = state.sender();
+                    let id = req.id;
+
+                    tokio::spawn(range.map(move |block| {
+                        let msg = Response {
+                            id,
+                            body: ResponseBody::GetBlock(block),
+                        };
+
+                        let mut buf = Vec::with_capacity(65536);
+                        msg.serialize(&mut buf);
+                        Message::Binary(buf)
+                    }).forward(tx.clone().sink_map_err(move |_| {
+                        error!("[{}] Failed to send block range update", peer_addr);
+                    })).and_then(move |_| {
+                        let msg = Response {
+                            id,
+                            body: ResponseBody::GetBlockRange,
+                        };
+
+                        let mut buf = Vec::with_capacity(32);
+                        msg.serialize(&mut buf);
+                        tx.send(Message::Binary(buf)).map(|_sink| ()).map_err(move |_| {
+                            error!("[{}] Failed to send block range finalizer", peer_addr);
+                        })
+                    }));
+
+                    return None;
+                }
+                None => ResponseBody::Error(ErrorKind::InvalidHeight),
+            }
+        }
         RequestBody::GetAddressInfo(addr) => {
             let res = data.minter.get_addr_info(&addr);
             match res {
@@ -235,18 +278,18 @@ fn handle_request(data: &ServerData, state: &mut WsState, body: RequestBody) -> 
                 Err(e) => ResponseBody::Error(ErrorKind::TxValidation(e)),
             }
         }
-    }
+    })
 }
 
 pub struct WsState {
-    filter: Option<BTreeSet<ScriptHash>>,
+    filter: Option<BlockFilter>,
     addr: SocketAddr,
-    tx: UnboundedSender<Message>,
+    tx: Sender<Message>,
 }
 
 impl WsState {
     #[inline]
-    pub fn new(addr: SocketAddr, tx: UnboundedSender<Message>) -> Self {
+    pub fn new(addr: SocketAddr, tx: Sender<Message>) -> Self {
         Self {
             filter: None,
             addr,
@@ -260,12 +303,12 @@ impl WsState {
     }
 
     #[inline]
-    pub fn filter(&self) -> Option<&BTreeSet<ScriptHash>> {
+    pub fn filter(&self) -> Option<&BlockFilter> {
         self.filter.as_ref()
     }
 
     #[inline]
-    pub fn sender(&self) -> UnboundedSender<Message> {
+    pub fn sender(&self) -> Sender<Message> {
         self.tx.clone()
     }
 }

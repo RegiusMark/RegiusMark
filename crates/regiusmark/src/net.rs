@@ -3,7 +3,6 @@ use crate::{
     serializer::*,
 };
 use std::{
-    collections::BTreeSet,
     io::{self, Cursor, Error},
     mem,
     sync::Arc,
@@ -58,27 +57,31 @@ pub enum BodyType {
     // Operations that can update the connection or blockchain state
     Broadcast = 0x10,
     SetBlockFilter = 0x11,
+    ClearBlockFilter = 0x12,
     /// Subscribe to receive block updates. Any block filters applied may be ignored.
-    Subscribe = 0x12,
+    Subscribe = 0x13,
     /// Unsubscribe from receiving block updates.
-    Unsubscribe = 0x13,
+    Unsubscribe = 0x14,
 
     // Getters
     GetProperties = 0x20,
     GetBlock = 0x21,
-    GetBlockHeader = 0x22,
-    GetAddressInfo = 0x23,
+    GetFullBlock = 0x22,
+    GetBlockRange = 0x23,
+    GetAddressInfo = 0x24,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestBody {
     Broadcast(TxVariant),
     SetBlockFilter(BlockFilter),
+    ClearBlockFilter,
     Subscribe,
     Unsubscribe,
     GetProperties,
-    GetBlock(u64),       // height
-    GetBlockHeader(u64), // height
+    GetBlock(u64),           // height
+    GetFullBlock(u64),       // height
+    GetBlockRange(u64, u64), // min height, max height
     GetAddressInfo(ScriptHash),
 }
 
@@ -91,21 +94,14 @@ impl RequestBody {
                 tx.serialize(buf);
             }
             Self::SetBlockFilter(filter) => {
+                buf.reserve_exact(1 + (filter.len() * mem::size_of::<ScriptHash>()));
                 buf.push(BodyType::SetBlockFilter as u8);
-                match filter {
-                    BlockFilter::None => {
-                        // Addr len
-                        buf.push(0);
-                    }
-                    BlockFilter::Addr(addrs) => {
-                        buf.reserve_exact(1 + addrs.len() * mem::size_of::<ScriptHash>());
-                        buf.push(addrs.len() as u8);
-                        for addr in addrs {
-                            buf.push_digest(&addr.0);
-                        }
-                    }
+                buf.push(filter.len() as u8);
+                for addr in filter {
+                    buf.push_digest(&addr.0);
                 }
             }
+            Self::ClearBlockFilter => buf.push(BodyType::ClearBlockFilter as u8),
             Self::Subscribe => buf.push(BodyType::Subscribe as u8),
             Self::Unsubscribe => buf.push(BodyType::Unsubscribe as u8),
             Self::GetProperties => buf.push(BodyType::GetProperties as u8),
@@ -114,10 +110,16 @@ impl RequestBody {
                 buf.push(BodyType::GetBlock as u8);
                 buf.push_u64(*height);
             }
-            Self::GetBlockHeader(height) => {
+            Self::GetFullBlock(height) => {
                 buf.reserve_exact(9);
-                buf.push(BodyType::GetBlockHeader as u8);
+                buf.push(BodyType::GetFullBlock as u8);
                 buf.push_u64(*height);
+            }
+            Self::GetBlockRange(min_height, max_height) => {
+                buf.reserve_exact(1 + (2 * mem::size_of::<u64>()));
+                buf.push(BodyType::GetBlockRange as u8);
+                buf.push_u64(*min_height);
+                buf.push_u64(*max_height);
             }
             Self::GetAddressInfo(addr) => {
                 buf.reserve_exact(33);
@@ -137,16 +139,13 @@ impl RequestBody {
             }
             t if t == BodyType::SetBlockFilter as u8 => {
                 let addr_len = usize::from(cursor.take_u8()?);
-                if addr_len == 0 {
-                    Ok(Self::SetBlockFilter(BlockFilter::None))
-                } else {
-                    let mut addrs = BTreeSet::new();
-                    for _ in 0..addr_len {
-                        addrs.insert(ScriptHash(cursor.take_digest()?));
-                    }
-                    Ok(Self::SetBlockFilter(BlockFilter::Addr(addrs)))
+                let mut filter = BlockFilter::new();
+                for _ in 0..addr_len {
+                    filter.insert(ScriptHash(cursor.take_digest()?));
                 }
+                Ok(Self::SetBlockFilter(filter))
             }
+            t if t == BodyType::ClearBlockFilter as u8 => Ok(Self::ClearBlockFilter),
             t if t == BodyType::Subscribe as u8 => Ok(Self::Subscribe),
             t if t == BodyType::Unsubscribe as u8 => Ok(Self::Unsubscribe),
             t if t == BodyType::GetProperties as u8 => Ok(Self::GetProperties),
@@ -154,9 +153,14 @@ impl RequestBody {
                 let height = cursor.take_u64()?;
                 Ok(Self::GetBlock(height))
             }
-            t if t == BodyType::GetBlockHeader as u8 => {
+            t if t == BodyType::GetFullBlock as u8 => {
                 let height = cursor.take_u64()?;
-                Ok(Self::GetBlockHeader(height))
+                Ok(Self::GetFullBlock(height))
+            }
+            t if t == BodyType::GetBlockRange as u8 => {
+                let min_height = cursor.take_u64()?;
+                let max_height = cursor.take_u64()?;
+                Ok(Self::GetBlockRange(min_height, max_height))
             }
             t if t == BodyType::GetAddressInfo as u8 => {
                 let addr = ScriptHash(cursor.take_digest()?);
@@ -175,14 +179,13 @@ pub enum ResponseBody {
     Error(ErrorKind),
     Broadcast,
     SetBlockFilter,
+    ClearBlockFilter,
     Subscribe,
     Unsubscribe,
     GetProperties(Properties),
     GetBlock(FilteredBlock),
-    GetBlockHeader {
-        header: BlockHeader,
-        signer: SigPair,
-    },
+    GetFullBlock(Arc<Block>),
+    GetBlockRange,
     GetAddressInfo(AddressInfo),
 }
 
@@ -203,6 +206,7 @@ impl ResponseBody {
             }
             Self::Broadcast => buf.push(BodyType::Broadcast as u8),
             Self::SetBlockFilter => buf.push(BodyType::SetBlockFilter as u8),
+            Self::ClearBlockFilter => buf.push(BodyType::ClearBlockFilter as u8),
             Self::Subscribe => buf.push(BodyType::Subscribe as u8),
             Self::Unsubscribe => buf.push(BodyType::Unsubscribe as u8),
             Self::GetProperties(props) => {
@@ -232,12 +236,12 @@ impl ResponseBody {
                     }
                 }
             }
-            Self::GetBlockHeader { header, signer } => {
-                buf.reserve_exact(256);
-                buf.push(BodyType::GetBlockHeader as u8);
-                header.serialize(buf);
-                buf.push_sig_pair(signer);
+            Self::GetFullBlock(block) => {
+                buf.reserve_exact(1_048_576);
+                buf.push(BodyType::GetFullBlock as u8);
+                block.serialize(buf);
             }
+            Self::GetBlockRange => buf.push(BodyType::GetBlockRange as u8),
             Self::GetAddressInfo(info) => {
                 buf.reserve_exact(1 + (mem::size_of::<Asset>() * 3));
                 buf.push(BodyType::GetAddressInfo as u8);
@@ -257,6 +261,7 @@ impl ResponseBody {
             }
             t if t == BodyType::Broadcast as u8 => Ok(Self::Broadcast),
             t if t == BodyType::SetBlockFilter as u8 => Ok(Self::SetBlockFilter),
+            t if t == BodyType::ClearBlockFilter as u8 => Ok(Self::ClearBlockFilter),
             t if t == BodyType::Subscribe as u8 => Ok(Self::Subscribe),
             t if t == BodyType::Unsubscribe as u8 => Ok(Self::Unsubscribe),
             t if t == BodyType::GetProperties as u8 => {
@@ -306,12 +311,12 @@ impl ResponseBody {
                     )),
                 }
             }
-            t if t == BodyType::GetBlockHeader as u8 => {
-                let header = BlockHeader::deserialize(cursor)
+            t if t == BodyType::GetFullBlock as u8 => {
+                let block = Block::deserialize(cursor)
                     .ok_or_else(|| Error::from(io::ErrorKind::UnexpectedEof))?;
-                let signer = cursor.take_sig_pair()?;
-                Ok(Self::GetBlockHeader { header, signer })
+                Ok(Self::GetFullBlock(Arc::new(block)))
             }
+            t if t == BodyType::GetBlockRange as u8 => Ok(Self::GetBlockRange),
             t if t == BodyType::GetAddressInfo as u8 => {
                 let net_fee = cursor.take_asset()?;
                 let addr_fee = cursor.take_asset()?;

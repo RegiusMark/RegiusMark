@@ -5,6 +5,21 @@ simplifies documenting any changes.
 
 # Unreleased
 
+- Network protocol supports setting the block filter with an empty hash set to
+  retrieve only block headers.
+- Add ClearBlockFilter net API to the network protocol.
+- Remove GetBlockHeader net API from the network protocol.
+- Add GetFullBlock net API to allow filtering all blocks and allow retrieving
+  full blocks when necessary.
+- Add GetBlockRange net API to stream back a range of blocks to the client. This
+  is more efficient than naively looping GetBlock requests to the server.
+- Use a bounded sender when sending network messages for back pressure control
+
+### Breaking changes
+
+- The network protocol message type constants have been changed.
+- Clients must support streaming responses from the GetBlockRange network API.
+
 # Version 0.1.0 (2019-11-14)
 
 This marks the first release of the project. The blockchain server supports
