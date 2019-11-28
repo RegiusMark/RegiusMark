@@ -1,6 +1,6 @@
 use futures::{sync::mpsc::Sender, Future, Sink};
-use regiusmark::{net::Response, prelude::*};
 use parking_lot::RwLock;
+use regiusmark::{net::Response, prelude::*};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio_tungstenite::tungstenite::Message;
 

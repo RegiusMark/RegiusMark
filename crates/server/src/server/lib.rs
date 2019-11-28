@@ -1,6 +1,6 @@
 use futures::sync::mpsc::{self, Sender};
-use regiusmark::{blockchain::ReindexOpts, net::*, prelude::*};
 use log::{error, info, warn};
+use regiusmark::{blockchain::ReindexOpts, net::*, prelude::*};
 use std::{io::Cursor, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{net::TcpListener, prelude::*};
 use tokio_tungstenite::tungstenite::{protocol, Message};
