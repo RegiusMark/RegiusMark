@@ -1,6 +1,6 @@
 use crate::Wallet;
 use native_tls::TlsConnector;
-use regiusmark::net::{Request, RequestBody, Response, ResponseBody};
+use regiusmark::net::*;
 use std::{
     io::Cursor,
     net::{SocketAddr, TcpStream, ToSocketAddrs},
@@ -46,12 +46,15 @@ macro_rules! hex_to_bytes {
     }};
 }
 
-pub fn send_print_rpc_req(wallet: &mut Wallet, body: RequestBody) {
+pub fn send_print_rpc_req(wallet: &mut Wallet, body: rpc::Request) {
     let res = send_rpc_req(wallet, body);
-    println!("{:#?}", res);
+    match res {
+        Ok(res) => println!("{:#?}", res),
+        Err(e) => println!("{}", e),
+    }
 }
 
-pub fn send_rpc_req(wallet: &mut Wallet, body: RequestBody) -> Result<ResponseBody, String> {
+pub fn send_rpc_req(wallet: &mut Wallet, body: rpc::Request) -> Result<Msg, String> {
     let buf = {
         let req_id = {
             let id = wallet.req_id;
@@ -63,7 +66,10 @@ pub fn send_rpc_req(wallet: &mut Wallet, body: RequestBody) -> Result<ResponseBo
         };
 
         let mut buf = Vec::with_capacity(8192);
-        let req = Request { id: req_id, body };
+        let req = Msg {
+            id: req_id,
+            body: Body::Request(body),
+        };
         req.serialize(&mut buf);
         buf
     };
@@ -109,18 +115,34 @@ pub fn send_rpc_req(wallet: &mut Wallet, body: RequestBody) -> Result<ResponseBo
         ws
     };
     ws.write_message(Message::Binary(buf)).unwrap();
+    ws.write_pending().unwrap();
 
-    let res = loop {
+    let msg = loop {
         let msg = ws.read_message().unwrap();
         match msg {
-            Message::Binary(res) => break res,
+            Message::Binary(res) => {
+                let mut cursor = Cursor::<&[u8]>::new(&res);
+                let msg = Msg::deserialize(&mut cursor)
+                    .map_err(|e| format!("Failed to deserialize response: {}", e))?;
+                match msg.body {
+                    Body::Error(_) | Body::Response(_) => break msg,
+                    Body::Ping(nonce) => {
+                        let msg = Msg {
+                            id: msg.id,
+                            body: Body::Pong(nonce),
+                        };
+                        let mut buf = Vec::with_capacity(16);
+                        msg.serialize(&mut buf);
+                        ws.write_message(Message::Binary(buf)).unwrap();
+                        ws.write_pending().unwrap();
+                    }
+                    _ => continue,
+                }
+            }
             _ => continue,
         }
     };
     let _ = ws.close(None);
 
-    let mut cursor = Cursor::<&[u8]>::new(&res);
-    Response::deserialize(&mut cursor)
-        .map(|res| res.body)
-        .map_err(|e| format!("Failed to deserialize response: {}", e))
+    Ok(msg)
 }
